@@ -1,9 +1,22 @@
 {
   "name": "登録販売者 過去問エンジン",
   "short_name": "登販エンジン",
-  "start_url": "./?v=0.3.4",
+  "start_url": "./?v=0.7.0",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#ffffff",
-  "icons": []
+  "background_color": "#23272d",
+  "theme_color": "#303740",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

@@ -1,6 +1,11 @@
 (function(){
-  const DISTRIBUTION={'第1章':5,'第2章':5,'第3章':5,'第4章':10,'第5章':5};
-  const HISTORY_KEY='touhan.engine.generator.history.v060';
+  const DISTRIBUTIONS={
+    one_by_one:{'第1章':5,'第2章':5,'第3章':5,'第4章':10,'第5章':5},
+    practice60:{'第1章':10,'第2章':10,'第3章':20,'第4章':10,'第5章':10},
+    exam_am:{'第1章':20,'第2章':20,'第4章':20},
+    exam_pm:{'第3章':40,'第5章':20}
+  };
+  const HISTORY_KEY='touhan.engine.generator.history.v070';
 
   function hashSeed(text){let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
   function rng(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
@@ -14,6 +19,7 @@
       .replace(/([一-龯々〆ヵヶ])\|[ぁ-んァ-ヶー]{1,8}\|/g,'$1')
       .replace(/\|/g,'')
       .replace(/[ \t　]+/g,' ')
+      .replace(/\n(?=[ぁ-んァ-ヶー]{1,8}\n)/g,'')
       .replace(/\s*\n\s*/g,'')
       .trim();
   }
@@ -55,28 +61,58 @@
     return out;
   }
 
-  function buildOneByOnePool(questions){return questions.flatMap(deriveOneByOne).filter(x=>x.statement.length>=12)}
+  function isNaturalStatement(text){
+    const t=cleanText(text);
+    if(t.length<18||t.length>240)return false;
+    if(!/[。！？)]$/.test(t))return false;
+    if(/[A-Z]{2,}|[�□■◆◇]{1,}|\*RRG|[0-9A-Za-z]{7,}/.test(t))return false;
+    if(/(?:問|正しい組合せ|誤っているものはどれか|正しいものはどれか)$/.test(t))return false;
+    return true;
+  }
+  function buildOneByOnePool(questions){return questions.flatMap(deriveOneByOne).filter(x=>isNaturalStatement(x.statement))}
   function toOneByOneQuestion(q,no){return {no,chapter:q.chapter,theme:`東京都${q.year}年度 問${q.question_no} 記述${q.label}`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,answer:q.truth?'○':'×',text:q.statement,explanation:`東京都${q.year}年度 問${q.question_no}の公式過去問に基づく記述です。正解は「${q.truth?'○':'×'}」です。`,category:'one_by_one',category_label:'一問一答'}}
 
-  function generateSets({pool,date,dayId,title,category,categoryLabel,mapper}){
-    if(!Array.isArray(pool)||pool.length<120)throw new Error(`使用可能問題が不足しています（${pool?.length||0}問）`);
-    const random=rng(hashSeed(`${date}|${dayId}|${category}|${pool.length}`)),blocked=recentIds(category,3),selected=new Set(),sets=[];
-    for(let s=1;s<=4;s++){
-      const picked=[];
-      for(const [chapter,count] of Object.entries(DISTRIBUTION))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected));
-      if(picked.length<30){for(const q of shuffle(pool,random)){if(picked.length>=30)break;if(!selected.has(q.question_id)&&!blocked.has(q.question_id)){picked.push(q);selected.add(q.question_id)}}}
-      if(picked.length<30)throw new Error(`第${s}セットを30問確保できませんでした`);
-      sets.push({id:`${dayId}-set-${s}`,title:`第${s}セット`,note:`全120問中 ${s}/4`,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))});
+  function pickByDistribution(pool,distribution,random,blocked,selected){
+    const picked=[];
+    for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected));
+    return picked;
+  }
+  function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper}){
+    let picked=pickByDistribution(pool,distribution,random,blocked,selected);
+    if(picked.length<count){for(const q of shuffle(pool,random)){if(picked.length>=count)break;if(!selected.has(q.question_id)&&!blocked.has(q.question_id)){picked.push(q);selected.add(q.question_id)}}}
+    if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした`);
+    return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))};
+  }
+  function nextPracticeTitle(date,baseTitle,kind){
+    const d=date.replace(/-/g,'/');
+    if(kind!=='practice')return baseTitle||d;
+    const n=history().filter(x=>x.date===date&&x.kind==='practice').length+1;
+    return `${d}（練習${n===1?'':n}）`;
+  }
+  function saveHistory(result,mode,kind){
+    const ids=result.sets.flatMap(s=>s.questions.map(q=>q.knowledge_id));
+    const rows=history();rows.push({dayId:result.id,date:result.date.replace(/\//g,'-'),resultTitle:result.title,category:result.category,mode,kind,questionIds:ids,createdAt:new Date().toISOString()});
+    localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(-100)));
+  }
+  function generate({questions,date,dayId,title,mode='exam_style',kind='normal'}){
+    const actualTitle=nextPracticeTitle(date,title,kind);
+    const random=rng(hashSeed(`${date}|${dayId}|${mode}|${kind}|${questions.length}`)),blocked=recentIds(mode,3),selected=new Set();
+    let result;
+    if(mode==='one_by_one'){
+      const pool=buildOneByOnePool(questions),sets=[];
+      if(pool.length<120)throw new Error(`一問一答の使用可能問題が不足しています（${pool.length}問）`);
+      for(let i=1;i<=4;i++)sets.push(makeSet({pool,distribution:DISTRIBUTIONS.one_by_one,count:30,id:`${dayId}-set-${i}`,title:`第${i}セット`,note:`全120問中 ${i}/4`,random,blocked,selected,mapper:toOneByOneQuestion}));
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'one_by_one',category_label:'一問一答',mode:'one_by_one',kind,sets};
+    }else if(mode==='practice60'){
+      const set=makeSet({pool:questions,distribution:DISTRIBUTIONS.practice60,count:60,id:`${dayId}-practice60`,title:'総合演習 60問',note:'全5章を本番比率で総合演習',random,blocked,selected,mapper:toExamQuestion});
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'practice60',category_label:'総合演習60問',mode:'practice60',kind,sets:[set]};
+    }else{
+      const am=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_am,count:60,id:`${dayId}-am`,title:'午前 60問',note:'第1章20・第2章20・第4章20',random,blocked,selected,mapper:toExamQuestion});
+      const pm=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-pm`,title:'午後 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion});
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[am,pm]};
     }
-    const result={id:dayId,title,date:date.replace(/-/g,'/'),category,category_label:categoryLabel,sets};
-    const ids=sets.flatMap(s=>s.questions.map(q=>q.knowledge_id));const rows=history().filter(x=>!(x.dayId===dayId&&x.category===category));
-    rows.push({dayId,date,resultTitle:title,category,questionIds:ids,createdAt:new Date().toISOString()});localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(-60)));return result;
+    saveHistory(result,mode,kind);return result;
   }
 
-  function generate({questions,date,dayId,title,mode='exam_style'}){
-    if(mode==='one_by_one')return generateSets({pool:buildOneByOnePool(questions),date,dayId,title,category:'one_by_one',categoryLabel:'一問一答',mapper:toOneByOneQuestion});
-    return generateSets({pool:questions,date,dayId,title,category:'exam_style',categoryLabel:'本番形式',mapper:toExamQuestion});
-  }
-
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTION,HISTORY_KEY};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY};
 })();
