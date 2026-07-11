@@ -506,7 +506,7 @@ renderStats();
 
   window.addEventListener("load", function(){
     const h1 = document.querySelector("h1");
-    if (h1) h1.textContent = "登録販売者 過去問エンジン v0.4.2";
+    if (h1) h1.textContent = "登録販売者 過去問エンジン v0.5.0";
   });
 })();
 (function(){
@@ -546,7 +546,7 @@ renderStats();
   window.TouhanValidator={validateQuestion,validateDatabase};
 })();
 (function(){
-  const DISTRIBUTION={'第1章':5,'第2章':5,'第3章':5,'第4章':10,'第5章':5}; const HISTORY_KEY='touhan.engine.generator.history.v042';
+  const DISTRIBUTION={'第1章':5,'第2章':5,'第3章':5,'第4章':10,'第5章':5}; const HISTORY_KEY='touhan.engine.generator.history.v050';
   function hashSeed(text){let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0} function rng(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}} function shuffle(list,random){const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
   function history(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')}catch{return[]}} function recentIds(days=4){return new Set(history().slice(-days).flatMap(x=>x.questionIds||[]))}
   function pick(pool,count,random,blocked,selected){const years={};for(const q of pool)(years[q.year]??=[]).push(q);Object.keys(years).forEach(y=>years[y]=shuffle(years[y],random));const ys=shuffle(Object.keys(years),random),out=[];let c=0,g=0;while(out.length<count&&ys.length&&g++<10000){const y=ys[c++%ys.length];let q;while(years[y].length&&!q){const x=years[y].shift();if(!selected.has(x.question_id)&&!blocked.has(x.question_id))q=x}if(q){out.push(q);selected.add(q.question_id)}if(ys.every(k=>years[k].length===0))break}return out}

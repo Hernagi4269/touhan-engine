@@ -1,0 +1,31 @@
+{
+  "2021": {
+    "blocks": 120,
+    "updated": 120,
+    "issues": []
+  },
+  "2022": {
+    "blocks": 118,
+    "updated": 118,
+    "issues": [
+      [
+        47,
+        "missing"
+      ],
+      [
+        48,
+        "missing"
+      ]
+    ]
+  },
+  "2023": {
+    "blocks": 120,
+    "updated": 120,
+    "issues": []
+  },
+  "2024": {
+    "blocks": 120,
+    "updated": 120,
+    "issues": []
+  }
+}
