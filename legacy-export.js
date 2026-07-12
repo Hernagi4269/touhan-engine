@@ -95,8 +95,4 @@
     }
   };
 
-  window.addEventListener("load", function(){
-    const h1 = document.querySelector("h1");
-    if (h1) h1.textContent = "登録販売者 過去問エンジン v0.4.0";
-  });
 })();
