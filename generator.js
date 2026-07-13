@@ -5,7 +5,7 @@
     exam_am:{'第1章':20,'第2章':20,'第4章':20},
     exam_pm:{'第3章':40,'第5章':20}
   };
-  const HISTORY_KEY='touhan.engine.generator.history.v083';
+  const HISTORY_KEY='touhan.engine.generator.history.v084';
 
   function hashSeed(text){let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
   function rng(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
@@ -35,7 +35,7 @@
     [/収斂\s*れん/g,'収斂'],[/止瀉\s*しゃ/g,'止瀉'],[/鎮咳\s*がい/g,'鎮咳'],[/去痰\s*たん/g,'去痰'],
     [/含嗽\s*そう/g,'含嗽'],[/鎮暈\s*うん/g,'鎮暈'],[/疳\s*かん/g,'疳'],[/亢\s*こう\s*進/g,'亢進'],
     [/弛\s*し\s*緩/g,'弛緩'],[/鱗\s*りん\s*茎/g,'鱗茎'],[/膨\s*ぼう\s*潤/g,'膨潤'],
-    [/頻\s*ひん\s*脈/g,'頻脈'],[/浮腫\s*しゅ/g,'浮腫'],[/腫脹\s*ちょう/g,'腫脹']
+    [/頻\s*ひん\s*脈/g,'頻脈'],[/浮腫\s*しゅ/g,'浮腫'],[/腫脹\s*ちょう/g,'腫脹'],[/くう\s*くう(?=口腔)/g,''],[/い\s*たん\s*じ(?=を示し)/g,''],[/作用がを示し/g,'作用を示し']
   ];
   function cleanText(value,{stripQuestionNo=false}={}){
     let text=removeRubyLines(value)
@@ -56,23 +56,98 @@
     return text;
   }
 
+  function normalizeExamRaw(value){
+    return removeRubyLines(String(value??''))
+      .replace(/\r/g,'')
+      .replace(/（\s*([ａ-ｄa-d])\s*）/g,(_,x)=>`（${x.normalize('NFKC').toLowerCase()}）`)
+      .replace(/\(\s*([ａ-ｄa-d])\s*\)/g,(_,x)=>`（${x.normalize('NFKC').toLowerCase()}）`)
+      .replace(/^[ \t　]*[0-9０-９]{1,2}[ \t　]*$/gm,'')
+      .replace(/\n[ \t　]*問[０-９0-9]+[\s\S]*$/u,'')
+      .trim();
+  }
+
+  function cleanExamParagraph(value){
+    return cleanText(String(value??'').replace(/\n+/g,' '));
+  }
+
   function examPrompt(q){
-    const raw=String(q.question_text??'').replace(/\r/g,'');
-    const firstStatement=raw.search(/(?:^|\n)\s*[ａ-ｄa-d]\s+/m);
+    const raw=normalizeExamRaw(q.question_text);
+    const firstStatement=raw.search(/(?:^|\n)\s*[ａ-ｄa-d]\s+(?!）)/m);
     const promptSource=firstStatement>=0?raw.slice(0,firstStatement):raw;
-    let prompt=cleanText(promptSource,{stripQuestionNo:true});
+    let prompt=cleanExamParagraph(promptSource);
     const complete=prompt.match(/^[\s\S]*?(?:どれか。|組合せはどれか。|正しいか。|誤っているか。)/);
     if(complete)prompt=complete[0].trim();
-    return prompt;
+    return stripSourceQuestionNumber(prompt);
+  }
+
+  function placeholderLabels(q){
+    const raw=normalizeExamRaw(q.question_text);
+    return [...new Set((raw.match(/（([a-d])）/g)||[]).map(x=>x.slice(1,2)))];
+  }
+
+  function isFillBlankQuestion(q){
+    const labels=placeholderLabels(q);
+    return labels.length>0 && /中に入れるべき字句|字句の正しい組合せ/.test(cleanExamParagraph(q.question_text));
+  }
+
+  function formatFillBlankText(q){
+    const raw=normalizeExamRaw(q.question_text);
+    const prompt=examPrompt(q);
+    const rawParas=raw.split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);
+    let body='';
+    if(rawParas.length>=2){
+      body=rawParas.slice(1).join('\n\n');
+    }else{
+      const marker=raw.match(/(?:組合せはどれ[\s\n]*か。|どれ[\s\n]*か。)/);
+      body=marker?raw.slice(marker.index+marker[0].length):'';
+    }
+    body=body
+      .replace(/^\s*(?:なお、[^。]*。\s*)?/,'')
+      .replace(/\n\s*[ａ-ｄa-d](?:\s+[ａ-ｄa-d]){1,3}\s*$/m,'')
+      .trim();
+    const paras=body.split(/\n\s*\n+/).map(cleanExamParagraph).filter(x=>x&&!/^[a-d](?:\s+[a-d]){1,3}$/i.test(x));
+    return [prompt,...paras].filter(Boolean).join('\n\n');
+  }
+
+  function splitPairStatement(text){
+    const t=cleanExamParagraph(text);
+    const parts=t.split(/\s*[―—ー－]{3,}\s*/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length>=2)return `${parts[0]}\n→ ${parts.slice(1).join(' ')}`;
+    return t;
   }
 
   function formatExamQuestionText(q){
+    if(isFillBlankQuestion(q))return formatFillBlankText(q);
     const prompt=examPrompt(q);
     const statements=extractLetterStatements(q);
     const blocks=Object.entries(statements)
       .sort(([a],[b])=>a.localeCompare(b))
-      .map(([label,text])=>`【${label}】 ${cleanText(text)}`);
+      .map(([label,text])=>`【${label}】 ${splitPairStatement(text)}`);
     return blocks.length?[prompt,...blocks].filter(Boolean).join('\n\n'):prompt;
+  }
+
+  function splitChoiceCells(text,count){
+    const raw=String(text??'').replace(/\r/g,'').trim();
+    const cells=raw.split(/[ \t　]+/).map(cleanText).filter(Boolean);
+    if(count>1 && cells.length===count)return cells;
+    return null;
+  }
+
+  function formatExamChoiceText(q,text){
+    const raw=String(text??'');
+    const cleaned=cleanText(raw)
+      .replace(/[（(]\s*([a-dａ-ｄ])\s*[,、]\s*([a-dａ-ｄ])\s*[）)]/gi,(_,a,b)=>`（${a.normalize('NFKC').toLowerCase()}・${b.normalize('NFKC').toLowerCase()}）`);
+    const labels=placeholderLabels(q);
+    if(labels.length){
+      const cells=splitChoiceCells(raw,labels.length);
+      if(cells)return cells.map((cell,i)=>`${labels[i]}：${cell}`).join('\n');
+    }
+    const marks=cleaned.match(/[正誤]/g)||[];
+    if(marks.length>=3 && marks.length<=4){
+      const ls=['a','b','c','d'].slice(0,marks.length);
+      return ls.map((l,i)=>`${l}：${marks[i]}`).join('\n');
+    }
+    return cleaned;
   }
 
   function toExamQuestion(q,no){
@@ -84,20 +159,20 @@
       source:`過去問（東京都${q.year}年度 問${q.question_no}）`,
       question_type:'single_best',
       text:formatExamQuestionText(q),
-      choices:q.choices.map((text,i)=>({id:String(i+1),text:cleanText(text)})),
+      choices:q.choices.map((text,i)=>({id:String(i+1),text:formatExamChoiceText(q,text)})),
       answer:String(q.answer),
       explanation:`正答は${q.answer}です。東京都${q.year}年度の公式過去問です。`
     };
   }
 
   function extractLetterStatements(q){
-    const text=String(q.question_text??'').replace(/\r/g,'');
+    const text=normalizeExamRaw(q.question_text);
     const matches=[...text.matchAll(/(?:^|\n)\s*([ａ-ｄa-d])\s+([\s\S]*?)(?=(?:\n\s*[ａ-ｄa-d]\s+)|(?:\n\s*[１-５1-5]\s*[（(])|(?:\n\s*[１-５1-5]\s+(?:正|誤))|$)/g)];
     const out={};
     for(const m of matches){
       const key=m[1].normalize('NFKC').toLowerCase();
-      const body=cleanText(m[2]).replace(/(?:１|1)[（(].*$/,'').trim();
-      if(body.length>=12)out[key]=body;
+      const body=cleanExamParagraph(m[2]).replace(/(?:１|1)[（(].*$/,'').trim();
+      if(body.length>=6)out[key]=body;
     }
     return out;
   }
@@ -187,5 +262,5 @@
     result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText};
 })();
