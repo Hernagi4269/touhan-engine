@@ -5,7 +5,7 @@
     exam_am:{'第1章':20,'第2章':20,'第4章':20},
     exam_pm:{'第3章':40,'第5章':20}
   };
-  const HISTORY_KEY='touhan.engine.generator.history.v070';
+  const HISTORY_KEY='touhan.engine.generator.history.v080';
 
   function hashSeed(text){let h=2166136261;for(const c of text){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
   function rng(seed){let a=seed>>>0;return()=>{a+=0x6D2B79F5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
@@ -83,19 +83,20 @@
     if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした`);
     return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))};
   }
-  function nextPracticeTitle(date,baseTitle,kind){
-    const d=date.replace(/-/g,'/');
-    if(kind!=='practice')return baseTitle||d;
-    const n=history().filter(x=>x.date===date&&x.kind==='practice').length+1;
-    return `${d}（練習${n===1?'':n}）`;
+  const KIND_LABELS={normal:'通常',practice:'練習',development:'開発'};
+  function generatedTitle(date,kind,sequence=1){
+    const d=date.replace(/-/g,'/'),n=Math.max(1,Number(sequence)||1);
+    if(kind==='practice')return `${d}（練習${n===1?'':n}）`;
+    if(kind==='development')return `${d}（開発${n===1?'':n}）`;
+    return n===1?d:`${d}（${n}）`;
   }
   function saveHistory(result,mode,kind){
     const ids=result.sets.flatMap(s=>s.questions.map(q=>q.knowledge_id));
     const rows=history();rows.push({dayId:result.id,date:result.date.replace(/\//g,'-'),resultTitle:result.title,category:result.category,mode,kind,questionIds:ids,createdAt:new Date().toISOString()});
     localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(-100)));
   }
-  function generate({questions,date,dayId,title,mode='exam_style',kind='normal'}){
-    const actualTitle=nextPracticeTitle(date,title,kind);
+  function generate({questions,date,dayId,title,mode='exam_style',kind='normal',sequence=1}){
+    const actualTitle=title||generatedTitle(date,kind,sequence);
     const random=rng(hashSeed(`${date}|${dayId}|${mode}|${kind}|${questions.length}`)),blocked=recentIds(mode,3),selected=new Set();
     let result;
     if(mode==='one_by_one'){
@@ -104,15 +105,18 @@
       for(let i=1;i<=4;i++)sets.push(makeSet({pool,distribution:DISTRIBUTIONS.one_by_one,count:30,id:`${dayId}-set-${i}`,title:`第${i}セット`,note:`全120問中 ${i}/4`,random,blocked,selected,mapper:toOneByOneQuestion}));
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'one_by_one',category_label:'一問一答',mode:'one_by_one',kind,sets};
     }else if(mode==='practice60'){
-      const set=makeSet({pool:questions,distribution:DISTRIBUTIONS.practice60,count:60,id:`${dayId}-practice60`,title:'総合演習 60問',note:'全5章を本番比率で総合演習',random,blocked,selected,mapper:toExamQuestion});
-      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'practice60',category_label:'総合演習60問',mode:'practice60',kind,sets:[set]};
+      const full=makeSet({pool:questions,distribution:DISTRIBUTIONS.practice60,count:60,id:`${dayId}-practice60`,title:'総合演習 60問',note:'全5章を本番比率で総合演習',random,blocked,selected,mapper:toExamQuestion});
+      const front={id:`${dayId}-practice60-front`,title:'前半 30問',note:'総合演習60問の前半',questions:full.questions.slice(0,30)};
+      const back={id:`${dayId}-practice60-back`,title:'後半 30問',note:'総合演習60問の後半',questions:full.questions.slice(30)};
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'practice60',category_label:'総合演習60問',mode:'practice60',kind,sets:[front,back]};
     }else{
-      const am=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_am,count:60,id:`${dayId}-am`,title:'午前 60問',note:'第1章20・第2章20・第4章20',random,blocked,selected,mapper:toExamQuestion});
-      const pm=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-pm`,title:'午後 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion});
-      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[am,pm]};
+      const front=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_am,count:60,id:`${dayId}-front`,title:'前半 60問',note:'第1章20・第2章20・第4章20',random,blocked,selected,mapper:toExamQuestion});
+      const back=makeSet({pool:questions,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion});
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
+    result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();
     saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle};
 })();
