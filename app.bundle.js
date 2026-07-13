@@ -473,7 +473,7 @@ renderStats();
   function shuffle(list,random){const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
   function history(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')}catch{return[]}}
   function recentIds(category,days=4){return new Set(history().filter(x=>x.category===category).slice(-days).flatMap(x=>x.questionIds||[]))}
-  function pick(pool,count,random,blocked,selected){const years={};for(const q of pool)(years[q.year]??=[]).push(q);Object.keys(years).forEach(y=>years[y]=shuffle(years[y],random));const ys=shuffle(Object.keys(years),random),out=[];let c=0,g=0;while(out.length<count&&ys.length&&g++<10000){const y=ys[c++%ys.length];let q;while(years[y].length&&!q){const x=years[y].shift();if(!selected.has(x.question_id)&&!blocked.has(x.question_id))q=x}if(q){out.push(q);selected.add(q.question_id)}if(ys.every(k=>years[k].length===0))break}return out}
+  function pick(pool,count,random,blocked,selected,selectedQuestions=[],duplicateGuard=null){const years={};for(const q of pool)(years[q.year]??=[]).push(q);Object.keys(years).forEach(y=>years[y]=shuffle(years[y],random));const ys=shuffle(Object.keys(years),random),out=[];let c=0,g=0;while(out.length<count&&ys.length&&g++<20000){const y=ys[c++%ys.length];let q;while(years[y].length&&!q){const x=years[y].shift();if(selected.has(x.question_id)||blocked.has(x.question_id))continue;if(duplicateGuard&&duplicateGuard(x,selectedQuestions))continue;q=x}if(q){out.push(q);selected.add(q.question_id);selectedQuestions.push(q)}if(ys.every(k=>years[k].length===0))break}return out}
 
   function removeRubyLines(value){
     const lines=String(value??'').replace(/\r/g,'').split('\n').map(x=>x.trim());
@@ -731,7 +731,7 @@ renderStats();
     if(/^[^。！？]{0,12}[、：]$/.test(t))return false;
 
     // 単独では参照先が分からない文脈依存語を含む記述は、一問一答から除外する。
-    if(/(?:本剤|本品|本製品|当該医薬品|この医薬品|その医薬品|当該製品|同剤)/.test(t))return false;
+    if(/(?:本剤|本品|本製品|本製剤|当該医薬品|当該製剤|この医薬品|この製剤|その医薬品|その製剤|当該製品|同剤|同製剤|前記|上記|下記|前述|後述|このうち|これらのうち|次の成分|次の記述)/.test(t))return false;
 
     // OCRで「陽イオン界面活性」が「陽性界面活性」等に崩れた記述を除外する。
     if(/(?:陽性|陰性)界面活性/.test(t))return false;
@@ -741,11 +741,44 @@ renderStats();
 
     return true;
   }
+
+  function normalizeSimilarityText(value){
+    return cleanText(value)
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/(?:である|とされる|ことがある|場合がある|こととされている|こととされる)/g,'')
+      .replace(/(?:ではない|ない|なく|ず|誤り|誤っている|正しい|適切|不適切)/g,'')
+      .replace(/[\s　、。！？「」『』（）()【】［］・:：;；,，.．―—ー－]/g,'');
+  }
+  function ngramSet(text,n=3){const set=new Set();for(let i=0;i<=text.length-n;i++)set.add(text.slice(i,i+n));return set;}
+  function diceSimilarity(a,b,n=3){
+    const x=normalizeSimilarityText(a),y=normalizeSimilarityText(b);
+    if(!x||!y)return 0;
+    if(x===y)return 1;
+    if(Math.min(x.length,y.length)>=18&&(x.includes(y)||y.includes(x)))return Math.min(x.length,y.length)/Math.max(x.length,y.length);
+    const A=ngramSet(x,n),B=ngramSet(y,n);if(!A.size||!B.size)return 0;
+    let common=0;for(const v of A)if(B.has(v))common++;
+    return (2*common)/(A.size+B.size);
+  }
+  function isNearDuplicateOneByOne(candidate,selectedQuestions){
+    const c=cleanText(candidate.statement);
+    for(const prev of selectedQuestions){
+      const p=cleanText(prev.statement);
+      const sim=diceSimilarity(c,p,3);
+      if(sim>=0.62)return true;
+      const c2=normalizeSimilarityText(c),p2=normalizeSimilarityText(p);
+      if(Math.min(c2.length,p2.length)>=24){
+        const shorter=c2.length<=p2.length?c2:p2,longer=c2.length<=p2.length?p2:c2;
+        if(longer.includes(shorter)&&shorter.length/longer.length>=0.68)return true;
+      }
+    }
+    return false;
+  }
   function buildOneByOnePool(questions){return questions.flatMap(deriveOneByOne).filter(x=>isNaturalStatement(x.statement))}
   function toOneByOneQuestion(q,no){return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,answer:q.truth?'○':'×',text:cleanText(q.statement),explanation:`東京都${q.year}年度の公式過去問に基づく記述です。正解は「${q.truth?'○':'×'}」です。`,category:'one_by_one',category_label:'一問一答'}}
 
-  function pickByDistribution(pool,distribution,random,blocked,selected){const picked=[];for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected));return picked}
-  function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper}){let picked=pickByDistribution(pool,distribution,random,blocked,selected);if(picked.length<count){for(const q of shuffle(pool,random)){if(picked.length>=count)break;if(!selected.has(q.question_id)&&!blocked.has(q.question_id)){picked.push(q);selected.add(q.question_id)}}}if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした`);return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))}}
+  function pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions=[],duplicateGuard=null){const picked=[];for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected,selectedQuestions,duplicateGuard));return picked}
+  function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper,selectedQuestions=[],duplicateGuard=null}){let picked=pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions,duplicateGuard);if(picked.length<count){for(const q of shuffle(pool,random)){if(picked.length>=count)break;if(selected.has(q.question_id)||blocked.has(q.question_id))continue;if(duplicateGuard&&duplicateGuard(q,selectedQuestions))continue;picked.push(q);selected.add(q.question_id);selectedQuestions.push(q)}}if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした（類似問題除外後）`);return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))}}
   const KIND_LABELS={normal:'通常',practice:'練習',development:'開発'};
   function generatedTitle(date,kind,sequence=1){const d=date.replace(/-/g,'/'),n=Math.max(1,Number(sequence)||1);if(kind==='practice')return `${d}（練習${n===1?'':n}）`;if(kind==='development')return `${d}（開発${n===1?'':n}）`;return n===1?d:`${d}（${n}）`}
   function saveHistory(result,mode,kind){const ids=result.sets.flatMap(s=>s.questions.map(q=>q.knowledge_id));const rows=history();rows.push({dayId:result.id,date:result.date.replace(/\//g,'-'),resultTitle:result.title,category:result.category,mode,kind,questionIds:ids,createdAt:new Date().toISOString()});localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(-100)))}
@@ -754,9 +787,9 @@ renderStats();
     const random=rng(hashSeed(`${date}|${dayId}|${mode}|${kind}|${questions.length}`)),blocked=recentIds(mode,3),selected=new Set();
     let result;
     if(mode==='one_by_one'){
-      const pool=buildOneByOnePool(questions),sets=[];
+      const pool=buildOneByOnePool(questions),sets=[],selectedQuestions=[];
       if(pool.length<120)throw new Error(`一問一答の使用可能問題が不足しています（${pool.length}問）`);
-      for(let i=1;i<=4;i++)sets.push(makeSet({pool,distribution:DISTRIBUTIONS.one_by_one,count:30,id:`${dayId}-set-${i}`,title:`第${i}セット`,note:`全120問中 ${i}/4`,random,blocked,selected,mapper:toOneByOneQuestion}));
+      for(let i=1;i<=4;i++)sets.push(makeSet({pool,distribution:DISTRIBUTIONS.one_by_one,count:30,id:`${dayId}-set-${i}`,title:`第${i}セット`,note:`全120問中 ${i}/4`,random,blocked,selected,mapper:toOneByOneQuestion,selectedQuestions,duplicateGuard:isNearDuplicateOneByOne}));
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'one_by_one',category_label:'一問一答',mode:'one_by_one',kind,sets};
     }else if(mode==='practice60'){
       const examPool=questions.filter(isUsableExamQuestion);
@@ -771,7 +804,7 @@ renderStats();
     result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.answer_key={schemaVersion:"1.1",sets:result.sets.map(s=>({id:s.id,title:s.title,answers:s.questions.map(q=>({no:q.no,answer:String(q.answer),explanation:q.explanation||""}))}))};saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,diceSimilarity,isNearDuplicateOneByOne};
 })();
 (function(){
   let rawDb=null, report=null, generated=null;
