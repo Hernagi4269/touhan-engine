@@ -243,8 +243,27 @@
     return cleaned;
   }
 
-  function makeShortExplanation(answer){return `正答は「${answer}」です。`;}
-  function makeDetailedExplanation(q,answer){const source=`東京都${q.year}年度 問${q.question_no}`;return `正答は「${answer}」です。${source}の公式過去問に基づきます。問題文と各選択肢を照合し、正しい組合せ・記述を確認してください。`;}
+  function conciseOneByOneExplanation(statement,truth){
+    let t=cleanText(statement);
+    if(truth){
+      return t.replace(/してください。?$/,'します。').replace(/することが適当である。?$/,'します。');
+    }
+    const rules=[
+      [/ではない。?$/,'です。'],[/対象ではない。?$/,'対象です。'],[/できない。?$/,'できます。'],
+      [/必要はない。?$/,'必要です。'],[/生じることはない。?$/,'生じることがあります。'],
+      [/行われない。?$/,'行われます。'],[/含まれていない。?$/,'含まれています。'],[/関与しない。?$/,'関与します。']
+    ];
+    for(const [pat,rep] of rules)if(pat.test(t))return t.replace(pat,rep);
+    if(/^必ず/.test(t))return '「必ず」と一律に断定できない点が誤りです。条件や例外があります。';
+    if(/(?:すべて|全て|一律)/.test(t))return 'すべてに一律に当てはまるわけではなく、条件や例外があります。';
+    return 'この記述は誤りです。誤っている語句や条件を詳しい解説で確認してください。';
+  }
+  function makeExamShortExplanation(q){
+    const i=Number(q.answer)-1;
+    const choice=q.choices?.[i];
+    const text=choice==null?'':formatExamChoiceText(q,choice);
+    return text?`正答は選択肢${q.answer}「${text.replace(/\n/g,'／')}」です。`:`正答は選択肢${q.answer}です。`;
+  }
   function toExamQuestion(q,no){
     return {
       no,
@@ -256,8 +275,8 @@
       text:formatExamQuestionText(q),
       choices:q.choices.map((text,i)=>({id:String(i+1),text:formatExamChoiceText(q,text)})),
       answer:String(q.answer),
-      shortExplanation:makeShortExplanation(String(q.answer)),
-      explanation:makeDetailedExplanation(q,String(q.answer))
+      shortExplanation:makeExamShortExplanation(q),
+      explanation:makeExamShortExplanation(q)
     };
   }
 
@@ -388,6 +407,11 @@
     // 指示語だけで対象を示す書き出しは、一問一答として単独で成立しない。
     if(/^(?:これ|それ|このもの|そのもの|当該品)(?:は|を|に|が|で)/.test(t))return false;
 
+    // 対象となる薬・製品が示されない服用／使用指示は、単独問題として不完全。
+    if(/^(?:一定期間|一定回数|一定期間又は一定回数|しばらく|数日間).*(?:服用|使用)/.test(t))return false;
+    if(/^(?:服用|使用)を(?:中止|継続)し/.test(t))return false;
+    if(/^(?:冷蔵庫内|直射日光の当たらない場所|湿気の少ない場所)で保管/.test(t))return false;
+
     return true;
   }
 
@@ -434,7 +458,7 @@
     return false;
   }
   function buildOneByOnePool(questions){return questions.flatMap(deriveOneByOne).filter(x=>isNaturalStatement(x.statement))}
-  function toOneByOneQuestion(q,no){const answer=q.truth?'○':'×';return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,answer,text:cleanText(q.statement),shortExplanation:`正答は「${answer}」です。`,explanation:`正答は「${answer}」です。東京都${q.year}年度 問${q.question_no}の公式過去問に基づく記述です。記述の主語・条件・例外を確認してください。`,category:'one_by_one',category_label:'一問一答'}}
+  function toOneByOneQuestion(q,no){const answer=q.truth?'○':'×',short=conciseOneByOneExplanation(q.statement,q.truth);return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,answer,text:cleanText(q.statement),shortExplanation:short,explanation:short,category:'one_by_one',category_label:'一問一答'}}
 
   function pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions=[],duplicateGuard=null){const picked=[];for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected,selectedQuestions,duplicateGuard));return picked}
   function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper,selectedQuestions=[],duplicateGuard=null}){let picked=pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions,duplicateGuard);if(picked.length<count){for(const q of shuffle(pool,random)){if(picked.length>=count)break;if(selected.has(q.question_id)||blocked.has(q.question_id))continue;if(duplicateGuard&&duplicateGuard(q,selectedQuestions))continue;picked.push(q);selected.add(q.question_id);selectedQuestions.push(q)}}if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした（類似問題除外後）`);return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))}}
