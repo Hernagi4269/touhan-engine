@@ -421,47 +421,57 @@
     return out;
   }
 
+  function naturalStatementReasons(text){
+    const t=cleanText(text),reasons=[];
+    if(t.length<18||t.length>260)reasons.push('文字数不適合');
+    if(!/[。！？]$/.test(t))reasons.push('文末不完全');
+    if(/[�□■◆◇]|\*RRG|&OLQLFDO|3UDFWLFH|(?:[A-Z][a-z]?){5,}|[0-9A-Za-z]{10,}/.test(t))reasons.push('OCRノイズ');
+    if(/(?:問|正しい組合せ|誤っているものはどれか|正しいものはどれか)$/.test(t))reasons.push('設問断片');
+    if(/^[ぁ-んァ-ヶー\s]+$/.test(t))reasons.push('仮名断片');
+    if(/^[^。！？]{0,12}[、：]$/.test(t))reasons.push('短い断片');
+
+    // 参照対象が本文外にある指示語・製品呼称。
+    if(/(?:本剤|本品|本製品|本製剤|当該医薬品|当該製剤|この医薬品|この製剤|その医薬品|その製剤|当該製品|同剤|同製剤|前記|上記|下記|前述|後述|このうち|これらのうち|次の成分|次の記述|この薬|その薬|このお薬|そのお薬|当該薬|この制酸薬|その制酸薬|この胃腸薬|その胃腸薬|この目薬|その目薬|このカプセル剤|そのカプセル剤)/.test(t))reasons.push('参照対象不明');
+
+    if(/(?:陽性|陰性)界面活性/.test(t))reasons.push('OCR語句崩れ');
+    if(/作用を(?!示す)[^、。！？]{1,12}示す/.test(t))reasons.push('語順崩れ');
+
+    // 理由節・接続語だけが独立した文。
+    if(/(?:ため|ので|ことから|ことにより|ことによって|おそれがあるため|可能性があるため)[。！？]$/.test(t))reasons.push('理由節断片');
+    if(/^(?:そのため|このため|したがって|よって|また|なお)[、，]?/.test(t))reasons.push('接続語始まり');
+
+    // 家族・相談事例の前提が抜けた記述。
+    if(/(?:息子さん|娘さん|お子さん|子ども|子供|患者さん|相談者|購入者).*(?:服用|使用|お使い|使わせ|飲ませ|塗布|投与)/.test(t))reasons.push('事例前提欠落');
+    if(/^(?:息子さん|娘さん|お子さん|子ども|子供|報告者|患者さん|相談者|購入者)(?:が|に|には|に対しては|に対して|へは|への)/.test(t))reasons.push('人物前提欠落');
+
+    // 対象薬が分からない服用・使用上の注意。
+    const drugWords=/(?:成分|薬|医薬品|製剤|製品|剤|漢方|鎮痛|解熱|かぜ|鼻炎|胃腸|制酸|瀉下|止瀉|鎮暈|鎮咳|去痰|外用|点眼|目薬|睡眠改善|禁煙補助|ビタミン|カルシウム|鉄|抗ヒスタミン|アドレナリン|カフェイン|アセトアミノフェン|イブプロフェン|ロキソプロフェン|ジフェンヒドラミン|プソイドエフェドリン|メチルエフェドリン|コデイン|ブロモバレリル尿素)/;
+    const medicationAction=/(?:服用|使用|投与|塗布|点眼|貼付|吸入)/;
+    if(/^(?:服用|使用|投与|塗布|点眼|貼付|吸入)(?:前|後|中|時|した後|すると)/.test(t) && !drugWords.test(t))reasons.push('対象薬不明');
+    if(/^(?:服用後|使用後|投与後|塗布後|点眼後|貼付後|吸入後)[、，]/.test(t) && !drugWords.test(t))reasons.push('対象薬不明');
+    if(/^(?:一定期間|一定回数|一定期間又は一定回数|しばらく|数日間).*(?:服用|使用)/.test(t))reasons.push('対象薬不明');
+    if(/^(?:服用|使用)を(?:中止|継続)し/.test(t))reasons.push('対象薬不明');
+    if(/^[^。！？]{0,28}(?:の診断を受けた人|治療中の人|妊婦|授乳婦|高齢者)は、?(?:服用|使用)前に/.test(t) && !drugWords.test(t))reasons.push('対象薬不明');
+    if(/(?:専門家に相談すること|医師又は薬剤師に相談すること|受診すること)[。！？]$/.test(t) && medicationAction.test(t) && !drugWords.test(t))reasons.push('対象薬不明');
+    if(/^(?:眠気|めまい|口渇|便秘|排尿困難|動悸|倦怠感|虚脱感)があらわれることがあります[。！？]$/.test(t))reasons.push('副作用対象不明');
+
+    // 保存・使用指示だけを切り出したもの。
+    if(/^(?:冷蔵庫内|直射日光の当たらない場所|湿気の少ない場所)で保管/.test(t))reasons.push('保存対象不明');
+
+    // 報告制度の様式操作だけを問う低文脈・低学習価値の断片。
+    if(/(?:報告様式|報告書|記入欄).*(?:すべて|全て|全部).*(?:記入|入力)/.test(t))reasons.push('報告様式断片');
+    if(/^ウェブサイトに直接入力することによる電子的な報告/.test(t))reasons.push('報告手段断片');
+
+    if(/^[^。！？、]{1,24}(?:のため|であるため|なので)[、，]/.test(t))reasons.push('理由始まり');
+    if(/^(?:これ|それ|このもの|そのもの|当該品)(?:は|を|に|が|で)/.test(t))reasons.push('指示語始まり');
+    if(/^(?:この|その|当該)(?:お薬|薬|医薬品|製剤|製品|商品)/.test(t))reasons.push('参照対象不明');
+    if(/(?:15歳未満|小児|乳幼児).*(?:使用できません|服用できません).*(?:娘さん|息子さん|お子さん)/.test(t))reasons.push('事例前提欠落');
+
+    return [...new Set(reasons)];
+  }
+
   function isNaturalStatement(text){
-    const t=cleanText(text);
-    if(t.length<18||t.length>260)return false;
-    if(!/[。！？]$/.test(t))return false;
-    if(/[�□■◆◇]|\*RRG|&OLQLFDO|3UDFWLFH|(?:[A-Z][a-z]?){5,}|[0-9A-Za-z]{10,}/.test(t))return false;
-    if(/(?:問|正しい組合せ|誤っているものはどれか|正しいものはどれか)$/.test(t))return false;
-    if(/^[ぁ-んァ-ヶー\s]+$/.test(t))return false;
-    if(/^[^。！？]{0,12}[、：]$/.test(t))return false;
-
-    // 単独では参照先が分からない文脈依存語を含む記述は、一問一答から除外する。
-    if(/(?:本剤|本品|本製品|本製剤|当該医薬品|当該製剤|この医薬品|この製剤|その医薬品|その製剤|当該製品|同剤|同製剤|前記|上記|下記|前述|後述|このうち|これらのうち|次の成分|次の記述|この薬|その薬|このお薬|そのお薬|当該薬|この制酸薬|その制酸薬|この胃腸薬|その胃腸薬|この目薬|その目薬|このカプセル剤|そのカプセル剤)/.test(t))return false;
-
-    // OCRで「陽イオン界面活性」が「陽性界面活性」等に崩れた記述を除外する。
-    if(/(?:陽性|陰性)界面活性/.test(t))return false;
-
-    // 「作用を真菌類示す」のように、目的語と「示す」の間へ不自然な語が挟まった文を除外する。
-    if(/作用を(?!示す)[^、。！？]{1,12}示す/.test(t))return false;
-
-    // 「〜ため。」「〜ので。」など、理由節だけが切り出された一問一答は単独で成立しない。
-    if(/(?:ため|ので|ことから|ことにより|ことによって|おそれがあるため|可能性があるため)[。！？]$/.test(t))return false;
-    if(/^(?:そのため|このため|したがって|よって|また|なお)[、，]?/.test(t))return false;
-
-    // 前の設問・製品説明・家族構成等がないと対象を特定できない断片を除外する。
-    if(/(?:息子さん|娘さん|お子さん|子ども|子供|患者さん|相談者|購入者).*(?:服用|使用|お使い|使わせ|飲ませ|塗布|投与)/.test(t))return false;
-    if(/^(?:息子さん|娘さん|お子さん|子ども|子供|報告者|患者さん|相談者|購入者)(?:が|に|には|に対しては|に対して|へは|への)/.test(t))return false;
-    if(/^ウェブサイトに直接入力することによる電子的な報告/.test(t))return false;
-
-    // 「カプセル剤のため、〜」など、対象説明の後半だけ切り出された理由始まりを除外する。
-    if(/^[^。！？、]{1,24}(?:のため|であるため|なので)[、，]/.test(t))return false;
-
-    // 指示語だけで対象を示す書き出しは、一問一答として単独で成立しない。
-    if(/^(?:これ|それ|このもの|そのもの|当該品)(?:は|を|に|が|で)/.test(t))return false;
-
-    // 対象となる薬・製品が示されない服用／使用指示は、単独問題として不完全。
-    if(/^(?:この|その|当該)(?:お薬|薬|医薬品|製剤|製品|商品)/.test(t))return false;
-    if(/(?:15歳未満|小児|乳幼児).*(?:使用できません|服用できません).*(?:娘さん|息子さん|お子さん)/.test(t))return false;
-    if(/^(?:一定期間|一定回数|一定期間又は一定回数|しばらく|数日間).*(?:服用|使用)/.test(t))return false;
-    if(/^(?:服用|使用)を(?:中止|継続)し/.test(t))return false;
-    if(/^(?:冷蔵庫内|直射日光の当たらない場所|湿気の少ない場所)で保管/.test(t))return false;
-
-    return true;
+    return naturalStatementReasons(text).length===0;
   }
 
   function normalizeSimilarityText(value){
@@ -519,10 +529,10 @@
     const random=rng(hashSeed(`${date}|${dayId}|${mode}|${kind}|${questions.length}`)),blocked=recentIds(mode,3),selected=new Set();
     let result;
     if(mode==='one_by_one'){
-      const pool=buildOneByOnePool(questions),sets=[],selectedQuestions=[];
+      const derived=questions.flatMap(deriveOneByOne),pool=derived.filter(x=>isNaturalStatement(x.statement)),sets=[],selectedQuestions=[];
       if(pool.length<120)throw new Error(`一問一答の使用可能問題が不足しています（${pool.length}問）`);
       for(let i=1;i<=4;i++)sets.push(makeSet({pool,distribution:DISTRIBUTIONS.one_by_one,count:30,id:`${dayId}-set-${i}`,title:`第${i}セット`,note:`全120問中 ${i}/4`,random,blocked,selected,mapper:toOneByOneQuestion,selectedQuestions,duplicateGuard:isNearDuplicateOneByOne}));
-      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'one_by_one',category_label:'一問一答',mode:'one_by_one',kind,sets};
+      result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'one_by_one',category_label:'一問一答',mode:'one_by_one',kind,sets,qualityFilter:{derivedCount:derived.length,usableCount:pool.length,excludedCount:derived.length-pool.length}};
     }else if(mode==='practice60'){
       const examPool=questions.filter(isUsableExamQuestion),selectedQuestions=[];
       const full=makeSet({pool:examPool,distribution:DISTRIBUTIONS.practice60,count:60,id:`${dayId}-practice60`,title:'総合演習 60問',note:'全5章を本番比率で総合演習',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
@@ -536,7 +546,7 @@
     result.schemaVersion="2.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText};
 })();
 (function(){
   let rawDb=null, report=null, generated=null;
