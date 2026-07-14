@@ -398,15 +398,60 @@
     return null;
   }
 
+  function sourcePromptText(q){
+    return cleanText(q.question_text,{stripQuestionNo:true});
+  }
+
+  function isScenarioSourceQuestion(q){
+    const p=sourcePromptText(q);
+    return /(?:相談を受けた|相談内容|相談者|店舗を訪れた|来店した|購入するため|購入しようとして|患者|症例|事例|家族|息子|娘|お子|傷口|症状を訴え|次のような相談|使用していた|服用していた)/.test(p);
+  }
+
+  function sourceTopic(q){
+    let p=sourcePromptText(q).replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    const patterns=[
+      /^(.*?)(?:に関する|についての|について、|に係る)次の記述(?:の正誤)?/,
+      /^(.*?)(?:に関する|についての|について、|に係る)記述(?:の正誤)?/,
+      /^(.*?)(?:に関する|についての|について、|に係る)次の文章/,
+      /^(.*?)(?:に関する|についての|について、|に係る)/
+    ];
+    for(const pattern of patterns){
+      const m=p.match(pattern);
+      if(m&&m[1]){
+        let topic=m[1].replace(/^(?:一般用医薬品|医薬品)を購入するために[^、。]*[、，]?/,'').replace(/(?:次の|以下の)$/,'').trim();
+        if(topic.length>=4&&topic.length<=90)return topic;
+      }
+    }
+    return '';
+  }
+
+  function statementNeedsContext(statement){
+    const s=cleanText(statement);
+    return /(?:報告の対象|報告がなされる|報告しなければ|当該|これ|それ|この|その|同梱|廃止され|記載され|提供され|認めるとき|対象となり得る|場合であっても|使用を中止するよう|使用するよう|受診するよう)/.test(s);
+  }
+
+  function contextualizeStatement(q,statement){
+    const s=cleanText(statement);
+    const topic=sourceTopic(q);
+    if(!topic)return s;
+    if(s.startsWith(topic)||s.includes(`${topic}は`)||s.includes(`${topic}では`))return s;
+    if(statementNeedsContext(s))return `${topic}について、${s}`;
+    return s;
+  }
+
   function deriveOneByOne(q){
     const out=[];
+    // 相談事例・症例問題は、個々の選択肢だけでは前提条件を失うため一問一答化しない。
+    if(isScenarioSourceQuestion(q))return out;
+
     const statements=sourceStatements(q);
     const truth=truthFromPattern(q,statements);
     if(truth){
       for(const key of Object.keys(statements)){
-        const statement=statements[key];
+        const rawStatement=statements[key];
         if(typeof truth[key]!=='boolean')continue;
-        out.push({question_id:`${q.question_id}_${key}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,truth:truth[key],source_question_id:q.question_id,label:key});
+        const statement=contextualizeStatement(q,rawStatement);
+        out.push({question_id:`${q.question_id}_${key}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:rawStatement,source_context:sourceTopic(q),truth:truth[key],source_question_id:q.question_id,label:key});
       }
       return out;
     }
@@ -415,8 +460,8 @@
     const answerIndex=Number(q.answer)-1;
     const uniqueChoices=new Set(choices);
     if(choices.length===5&&uniqueChoices.size===5&&answerIndex>=0&&answerIndex<5){
-      if(/誤っているものはどれか/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12)out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement:text,truth:i!==answerIndex,source_question_id:q.question_id,label:String(i+1)});});
-      else if(/正しいものはどれか/.test(prompt)&&!/組合せ/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12)out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement:text,truth:i===answerIndex,source_question_id:q.question_id,label:String(i+1)});});
+      if(/誤っているものはどれか/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12){const statement=contextualizeStatement(q,text);out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:text,source_context:sourceTopic(q),truth:i!==answerIndex,source_question_id:q.question_id,label:String(i+1)});}});
+      else if(/正しいものはどれか/.test(prompt)&&!/組合せ/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12){const statement=contextualizeStatement(q,text);out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:text,source_context:sourceTopic(q),truth:i===answerIndex,source_question_id:q.question_id,label:String(i+1)});}});
     }
     return out;
   }
@@ -461,6 +506,9 @@
     // 報告制度の様式操作だけを問う低文脈・低学習価値の断片。
     if(/(?:報告様式|報告書|記入欄).*(?:すべて|全て|全部).*(?:記入|入力)/.test(t))reasons.push('報告様式断片');
     if(/^ウェブサイトに直接入力することによる電子的な報告/.test(t))reasons.push('報告手段断片');
+    if(/^(?:インドメタシン|殺菌消毒薬|プレドニゾロン).*(?:使用を中止|使用するよう|勧める)/.test(t))reasons.push('事例選択肢断片');
+    if(/^(?:紙の添付文書|添付文書に記載|製造販売業者の名称).*(?:廃止され|記載され|提供され)/.test(t) && !/について、/.test(t))reasons.push('制度文脈欠落');
+    if(/^(?:医薬品との因果関係|安全対策上必要|保健衛生上の危害).*(?:報告|対象)/.test(t) && !/について、/.test(t))reasons.push('制度文脈欠落');
 
     if(/^[^。！？、]{1,24}(?:のため|であるため|なので)[、，]/.test(t))reasons.push('理由始まり');
     if(/^(?:これ|それ|このもの|そのもの|当該品)(?:は|を|に|が|で)/.test(t))reasons.push('指示語始まり');
@@ -546,7 +594,7 @@
     result.schemaVersion="2.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText};
 })();
 (function(){
   let rawDb=null, report=null, generated=null;
