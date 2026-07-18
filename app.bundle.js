@@ -61,7 +61,7 @@
     if(!normalize(q.question_text)||normalize(q.question_text).length<20) reasons.push('問題文不足');
     if(!/^第[1-5]章$/.test(normalize(q.chapter))) reasons.push('章が不正');
     if(choices.length!==5) reasons.push(`選択肢${choices.length}件`);
-    if(choices.some(x=>x.length<4)) reasons.push('短すぎる選択肢');
+    if(choices.some(x=>!(x||'').trim())) reasons.push('空の選択肢');
     if(new Set(choices.map(x=>x.replace(/[\s,、()（）]/g,''))).size!==choices.length) reasons.push('選択肢重複');
     if(!['1','2','3','4','5'].includes(String(q.answer))) reasons.push('正答不正');
     if(!q.year) reasons.push('年度なし');
