@@ -1,5 +1,10 @@
 {
-  "pool": 1862,
-  "bad": 0,
-  "table": true
+  "version": "1.2.1",
+  "database_questions": 600,
+  "manual_corrections": 15,
+  "json_parse": true,
+  "javascript_syntax": true,
+  "version_visible_in_index": true,
+  "corrected_table_choices": true,
+  "bad": 0
 }
