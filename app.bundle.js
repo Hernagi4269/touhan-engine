@@ -78,7 +78,7 @@
 })();
 (function(){
   const DISTRIBUTIONS={
-    one_by_one:{'第1章':5,'第2章':5,'第3章':5,'第4章':10,'第5章':5},
+    one_by_one:{'第1章':5,'第2章':5,'第3章':10,'第4章':5,'第5章':5},
     practice60:{'第1章':10,'第2章':10,'第3章':20,'第4章':10,'第5章':10},
     exam_am:{'第1章':20,'第2章':20,'第4章':20},
     exam_pm:{'第3章':40,'第5章':20}
@@ -220,9 +220,22 @@
 
   function splitPairStatement(text){
     const t=cleanExamParagraph(text);
-    const parts=t.split(/\s*[―—ー－]{3,}\s*/).map(x=>x.trim()).filter(Boolean);
+    const parts=t.split(/\s*[―—ー－]{2,}\s*/).map(x=>x.trim()).filter(Boolean);
     if(parts.length>=2)return `${parts[0]}\n→ ${parts.slice(1).join(' ')}`;
     return t;
+  }
+
+  // 原問の対応表「左項目――右説明」を、一問一答として独立した命題へ変換する。
+  // 罫線そのものはOCRノイズではないため、意味関係を保ったまま文章化する。
+  function normalizeCorrespondenceStatement(value){
+    const t=cleanExamParagraph(value);
+    const parts=t.split(/\s*[―—ー－]{2,}\s*/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length<2)return t;
+    const left=parts[0].replace(/[：:、，]$/,'').trim();
+    const right=parts.slice(1).join(' ').replace(/^[：:、，]/,'').trim();
+    if(!left||!right)return t;
+    if(/[はがをにでとのへ]$/.test(left))return `${left}${right}`;
+    return `${left}は、${right}`;
   }
 
   function formatExamQuestionText(q){
@@ -354,7 +367,9 @@
       choices:q.choices.map((text,i)=>({id:String(i+1),text:formatExamChoiceText(q,text)})),
       answer:String(q.answer),
       shortExplanation:makeExamShortExplanation(q),
-      explanation:makeExamShortExplanation(q)
+      explanation:makeExamShortExplanation(q),
+      source_question_id:q.question_id,
+      topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:'))
     };
   }
 
@@ -473,7 +488,7 @@
   }
 
   function contextualizeStatement(q,statement){
-    const s=cleanText(statement);
+    const s=normalizeCorrespondenceStatement(statement);
     const topic=sourceTopic(q);
     if(!topic)return s;
     if(s.startsWith(topic)||s.includes(`${topic}は`)||s.includes(`${topic}では`)||s.includes(`${topic}について`))return s;
@@ -586,18 +601,71 @@
     return naturalStatementReasons(text).length===0;
   }
 
-  const TOPIC_TERMS=['添付文書','咀嚼剤','医薬品PLセンター','副作用等報告','医薬品副作用被害救済制度','健康食品','特定保健用食品','機能性表示食品','配置販売業','店舗販売業','薬局','一般用検査薬','殺菌消毒成分'];
+  const TOPIC_TERMS=[
+    '添付文書','咀嚼剤','医薬品PLセンター','副作用等報告','医薬品副作用被害救済制度',
+    '健康食品','特定保健用食品','機能性表示食品','配置販売業','店舗販売業','薬局',
+    '一般用検査薬','妊娠検査薬','殺菌消毒成分','緊急安全性情報','安全性速報',
+    '濫用等のおそれのある医薬品','要指導医薬品','第一類医薬品','指定第二類医薬品',
+    'インターフェロン','間質性肺炎','偽アルドステロン症','無菌性髄膜炎','皮膚粘膜眼症候群',
+    '中毒性表皮壊死融解症','肝機能障害','腎障害','アナフィラキシー'
+  ];
+  const INGREDIENT_TERMS=[
+    'アセトアミノフェン','イブプロフェン','ロキソプロフェン','アスピリン','エテンザミド','イソプロピルアンチピリン',
+    'カフェイン','無水カフェイン','ジフェンヒドラミン','クロルフェニラミン','クレマスチン','メキタジン',
+    'プソイドエフェドリン','メチルエフェドリン','フェニレフリン','ナファゾリン','テトラヒドロゾリン',
+    'コデイン','ジヒドロコデイン','デキストロメトルファン','ノスカピン','グアイフェネシン','ブロムヘキシン',
+    'アンブロキソール','カルボシステイン','アセチルシステイン','グリチルリチン酸','カンゾウ','マオウ','ダイオウ',
+    'スルファメトキサゾール','スルファジアジン','アクリノール','クロルヘキシジン','ベンザルコニウム',
+    'セチルピリジニウム','ポビドンヨード','ヨウ素','イソプロピルメチルフェノール','トリクロロカルバニリド',
+    'インドメタシン','フェルビナク','ケトプロフェン','ジクロフェナク','プレドニゾロン','ヒドロコルチゾン',
+    'ニコチン','インターフェロン','hCG','ヒト絨毛性性腺刺激ホルモン','エストラジオール',
+    'ピレンゼピン','ロートエキス','スコポラミン','ブチルスコポラミン','パパベリン','メチルベナクチジウム',
+    '酸化マグネシウム','水酸化マグネシウム','炭酸カルシウム','炭酸水素ナトリウム','アルジオキサ',
+    'スクラルファート','セトラキサート','テプレノン','ゲファルナート','ビサコジル','センノシド','ピコスルファート',
+    'ロペラミド','タンニン酸アルブミン','次硝酸ビスマス','ベルベリン','木クレオソート'
+  ];
+  const KAMPO_TERMS=[
+    '葛根湯','麻黄湯','小青竜湯','麦門冬湯','柴胡桂枝湯','小柴胡湯','大柴胡湯','半夏厚朴湯',
+    '五苓散','防風通聖散','大黄甘草湯','乙字湯','芍薬甘草湯','加味逍遙散','当帰芍薬散','桂枝茯苓丸',
+    '補中益気湯','十全大補湯','八味地黄丸','牛車腎気丸','六味丸','猪苓湯','黄連解毒湯','抑肝散',
+    '釣藤散','呉茱萸湯','苓桂朮甘湯','温清飲','消風散','荊芥連翹湯','清上防風湯','防已黄耆湯'
+  ];
   function normalizedTopicKey(v){return cleanText(v).normalize('NFKC').replace(/[\s　、。・（）()「」『』]/g,'').replace(/(?:に関する|について|の記述|次の記述)$/g,'')}
+  function canonicalIngredientName(value){
+    return String(value??'').replace(/(?:塩酸塩|臭化物|硫酸塩|硝酸塩|マレイン酸塩|フマル酸塩|クエン酸塩|リン酸塩|ナトリウム|カリウム|カルシウム)$/,'');
+  }
   function topicKeys(q){
-    const text=`${q.source_context||''} ${q.statement||q.question_text||''}`,keys=new Set();
+    const text=`${q.source_context||''} ${q.statement||q.question_text||''}`.normalize('NFKC'),keys=new Set();
     for(const term of TOPIC_TERMS)if(text.includes(term))keys.add(`term:${term}`);
+    for(const term of KAMPO_TERMS)if(text.includes(term))keys.add(`kampo:${term}`);
+    for(const term of INGREDIENT_TERMS)if(text.includes(term))keys.add(`ingredient:${canonicalIngredientName(term)}`);
     for(const m of text.matchAll(/[一-龯ァ-ヶー]{2,14}(?:湯|散|丸|飲|膏)(?!剤)/g))keys.add(`kampo:${m[0]}`);
-    for(const m of text.matchAll(/[一-龯ァ-ヶー]{2,18}(?:塩酸塩|臭化物|硫酸塩|硝酸塩|マレイン酸塩|ナトリウム|カリウム|カルシウム|アクリノール|インドメタシン)/g))keys.add(`ingredient:${m[0]}`);
-    const ctx=normalizedTopicKey(q.source_context||'');if(ctx&&ctx.length>=3&&ctx.length<=32&&!/^(?:次|記述|正誤|組合せ)$/.test(ctx))keys.add(`context:${ctx}`);
+    for(const m of text.matchAll(/[一-龯ァ-ヶー]{3,24}(?:塩酸塩|臭化物|硫酸塩|硝酸塩|マレイン酸塩|フマル酸塩|クエン酸塩|リン酸塩|ナトリウム|カリウム|カルシウム)/g)){
+      const name=canonicalIngredientName(m[0]);
+      if(name.length>=3)keys.add(`ingredient:${name}`);
+    }
+    const ctx=normalizedTopicKey(q.source_context||'');
+    if(ctx&&ctx.length>=3&&ctx.length<=32&&!/^(?:次|記述|正誤|組合せ)$/.test(ctx))keys.add(`context:${ctx}`);
+    if(q.source_question_id)keys.add(`source:${q.source_question_id}`);
+    else if(q.question_id)keys.add(`source:${q.question_id}`);
     return [...keys];
   }
-  function hasTopicConflict(q,set){return topicKeys(q).some(k=>set.has(k))}
-  function addTopicKeys(q,set){topicKeys(q).forEach(k=>set.add(k))}
+  function hasTopicConflict(q,set){return topicKeys(q).some(k=>!k.startsWith('source:')&&set.has(k))}
+  function addTopicKeys(q,set){topicKeys(q).filter(k=>!k.startsWith('source:')).forEach(k=>set.add(k))}
+  function sharedTopicKeys(a,b){
+    const A=new Set(topicKeys(a));
+    return topicKeys(b).filter(k=>A.has(k));
+  }
+  function exceedsGlobalTopicLimit(candidate,selectedQuestions){
+    const keys=topicKeys(candidate).filter(k=>!k.startsWith('source:'));
+    for(const key of keys){
+      const limit=(key.startsWith('ingredient:')||key.startsWith('kampo:'))?2:3;
+      let used=0;
+      for(const q of selectedQuestions)if(topicKeys(q).includes(key))used++;
+      if(used>=limit)return true;
+    }
+    return false;
+  }
 
   function normalizeSimilarityText(value){
     return cleanText(value)
@@ -618,6 +686,7 @@
     return (2*common)/(A.size+B.size);
   }
   function isNearDuplicateOneByOne(candidate,selectedQuestions){
+    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
     const c=cleanText(candidate.statement);
     for(const prev of selectedQuestions){
       if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
@@ -632,6 +701,22 @@
     }
     return false;
   }
+  function isStructuralDuplicateOneByOne(candidate,selectedQuestions){
+    const c=cleanText(candidate.statement);
+    for(const prev of selectedQuestions){
+      if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
+      const p=cleanText(prev.statement);
+      const sim=diceSimilarity(c,p,3);
+      if(sim>=0.62)return true;
+      const c2=normalizeSimilarityText(c),p2=normalizeSimilarityText(p);
+      if(Math.min(c2.length,p2.length)>=24){
+        const shorter=c2.length<=p2.length?c2:p2,longer=c2.length<=p2.length?p2:c2;
+        if(longer.includes(shorter)&&shorter.length/longer.length>=0.68)return true;
+      }
+    }
+    return false;
+  }
+
   function isNearDuplicateExam(candidate,selectedQuestions){
     const c=questionSemanticText(candidate);
     for(const prev of selectedQuestions){
@@ -646,13 +731,66 @@
     const answer=q.truth?'○':'×';
     const short=conciseOneByOneExplanation(q.statement,q.truth);
     const detailed=detailedOneByOneExplanation(q.statement,q.truth,short);
-    return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,answer,text:cleanText(q.statement),shortExplanation:short,explanation:detailed,category:'one_by_one',category_label:'一問一答'};
+    return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,source_question_id:q.source_question_id||'',topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:')),answer,text:cleanText(q.statement),shortExplanation:short,explanation:detailed,category:'one_by_one',category_label:'一問一答'};
   }
 
   function pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions=[],duplicateGuard=null,topicSet=null){const picked=[];for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected,selectedQuestions,duplicateGuard,topicSet));return picked}
-  function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper,selectedQuestions=[],duplicateGuard=null}){const topicSet=new Set();let picked=pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions,duplicateGuard,topicSet);if(picked.length<count){const learn=learningMap(),generated=generatedCounts();for(const q of [...pool].sort((a,b)=>priorityScore(b,random,learn,generated)-priorityScore(a,random,learn,generated))){if(picked.length>=count)break;if(selected.has(q.question_id))continue;if(blocked.has(q.question_id)&&!((learn.get(String(q.question_id))?.wrongCount||0)>0||(learn.get(String(q.question_id))?.uncertainCount||0)>0))continue;if(duplicateGuard&&duplicateGuard(q,selectedQuestions))continue;if(hasTopicConflict(q,topicSet))continue;picked.push(q);selected.add(q.question_id);selectedQuestions.push(q);addTopicKeys(q,topicSet)}}if(picked.length<count)throw new Error(`${title}を${count}問確保できませんでした（題材・類似問題除外後）`);return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))}}
+  function makeSet({pool,distribution,count,id,title,note,random,blocked,selected,mapper,selectedQuestions=[],duplicateGuard=null}){
+    const topicSet=new Set(),picked=[];
+    const learn=learningMap(),generated=generatedCounts();
+    for(const [chapter,required] of Object.entries(distribution)){
+      const chapterPicked=pick(pool.filter(q=>q.chapter===chapter),required,random,blocked,selected,selectedQuestions,duplicateGuard,topicSet);
+      picked.push(...chapterPicked);
+      if(chapterPicked.length>=required)continue;
+
+      // 題材分散を優先しつつ、問題不足時は同一章内だけで段階的に緩和する。
+      const candidates=[...pool.filter(q=>q.chapter===chapter)]
+        .sort((a,b)=>priorityScore(b,random,learn,generated)-priorityScore(a,random,learn,generated));
+      for(const allowRecent of [false,true]){
+        for(const q of candidates){
+          if(chapterPicked.length>=required)break;
+          if(selected.has(q.question_id))continue;
+          const isReview=((learn.get(String(q.question_id))?.wrongCount||0)>0||(learn.get(String(q.question_id))?.uncertainCount||0)>0);
+          if(!allowRecent&&blocked.has(q.question_id)&&!isReview)continue;
+          const hardDuplicate=duplicateGuard===isNearDuplicateOneByOne
+            ?isStructuralDuplicateOneByOne(q,selectedQuestions)
+            :(duplicateGuard&&duplicateGuard(q,selectedQuestions));
+          if(hardDuplicate)continue;
+          chapterPicked.push(q);picked.push(q);selected.add(q.question_id);selectedQuestions.push(q);addTopicKeys(q,topicSet);
+        }
+        if(chapterPicked.length>=required)break;
+      }
+      if(chapterPicked.length<required)throw new Error(`${title}の${chapter}を${required}問確保できませんでした（確保${chapterPicked.length}問）`);
+    }
+    if(picked.length!==count)throw new Error(`${title}の問題数が不正です（${picked.length}/${count}問）`);
+    return {id,title,note,questions:shuffle(picked,random).map((q,i)=>mapper(q,i+1))}
+  }
+
   const KIND_LABELS={normal:'通常',practice:'練習',development:'開発'};
   function generatedTitle(date,kind,sequence=1){const d=date.replace(/-/g,'/'),n=Math.max(1,Number(sequence)||1);if(kind==='practice')return `${d}（練習${n===1?'':n}）`;if(kind==='development')return `${d}（開発${n===1?'':n}）`;return n===1?d:`${d}（${n}）`}
+  function auditGeneratedResult(result,mode){
+    const issues=[],warnings=[];
+    const all=result.sets.flatMap(s=>s.questions.map(q=>({setId:s.id,q})));
+    const ids=new Set();
+    for(const {setId,q} of all){
+      const id=String(q.knowledge_id||'');
+      if(!id)issues.push(`${setId}:knowledge_id欠落`);
+      if(ids.has(id))issues.push(`${setId}:knowledge_id重複:${id}`);
+      ids.add(id);
+      if(!cleanText(q.text||''))issues.push(`${setId}:${id}:本文欠落`);
+      if(mode==='one_by_one'&&naturalStatementReasons(q.text||'').length)issues.push(`${setId}:${id}:本文品質:${naturalStatementReasons(q.text||'').join('/')}`);
+    }
+    if(mode==='one_by_one'){
+      for(const set of result.sets){
+        const count={};for(const q of set.questions)count[q.chapter]=(count[q.chapter]||0)+1;
+        for(const [chapter,expected] of Object.entries(DISTRIBUTIONS.one_by_one))if((count[chapter]||0)!==expected)issues.push(`${set.id}:${chapter}=${count[chapter]||0}（期待${expected}）`);
+        const topicCount={};for(const q of set.questions)for(const k of (q.topic_keys||[]))topicCount[k]=(topicCount[k]||0)+1;
+        for(const [k,n] of Object.entries(topicCount))if(n>1)warnings.push(`${set.id}:題材分散を緩和:${k}=${n}`);
+      }
+    }
+    return {ok:issues.length===0,issueCount:issues.length,warningCount:warnings.length,issues,warnings};
+  }
+
   function saveHistory(result,mode,kind){const ids=result.sets.flatMap(s=>s.questions.map(q=>q.knowledge_id));const rows=history();rows.push({dayId:result.id,date:result.date.replace(/\//g,'-'),resultTitle:result.title,category:result.category,mode,kind,questionIds:ids,createdAt:new Date().toISOString()});localStorage.setItem(HISTORY_KEY,JSON.stringify(rows.slice(-100)))}
   function generate({questions,date,dayId,title,mode='exam_style',kind='normal',sequence=1}){
     const actualTitle=title||generatedTitle(date,kind,sequence);
@@ -673,10 +811,10 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_uncertain > seen",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="1.3.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText};
+  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
 })();
 (function(){
   let rawDb=null, report=null, generated=null;
