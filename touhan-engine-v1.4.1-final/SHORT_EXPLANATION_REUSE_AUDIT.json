@@ -1,0 +1,22 @@
+{
+  "before": {
+    "usable": 1044,
+    "missing": 783,
+    "complete": 42
+  },
+  "reused": 799,
+  "wrongCompleted": 799,
+  "notMatched": 74,
+  "genericRejected": 0,
+  "after": {
+    "usable": 1044,
+    "complete": 800,
+    "missing": 25
+  },
+  "manualCompleted": 25,
+  "afterManualCompletion": {
+    "usable": 1044,
+    "complete": 825
+  },
+  "remainingMissing": 0
+}
