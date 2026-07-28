@@ -1,7 +1,7 @@
-# v1.5.0 解説強化版
+登録販売者 過去問エンジン v1.7.1
 
-- 東京TKDB v0.4.0 の question-explanations.json を同梱
-- 誤文について同章の正しい記述との照合を追加
-- correction / mistakePoints / qualityTier を利用可能
-- assisted / fallback は注意表示推奨
-- 全件人手監査は未実施
+- TKDB JSONを唯一の知識データとして使用
+- question-explanations.json依存を廃止
+- 解答アプリ v14.4.0 の分離型学習状況JSON（data.answers / data.wrongMeta）を直接読込可能
+- 旧questions配列形式も継続対応
+- 「分からない」を誤答・迷ったと同様に復習優先度へ反映
