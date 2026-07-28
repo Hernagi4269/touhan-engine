@@ -686,6 +686,25 @@
     '補中益気湯','十全大補湯','八味地黄丸','牛車腎気丸','六味丸','猪苓湯','黄連解毒湯','抑肝散',
     '釣藤散','呉茱萸湯','苓桂朮甘湯','温清飲','消風散','荊芥連翹湯','清上防風湯','防已黄耆湯'
   ];
+  // 同じ知識IDでなくても、学習上ほぼ同じ題材に見える問題をまとめる近接カテゴリ。
+  // 1セット内の重複を禁止し、120問全体でも上限を設ける。
+  const SEMANTIC_TOPIC_GROUPS=[
+    ['プラセボ効果',['プラセボ','偽薬効果','暗示効果']],
+    ['乗物酔い',['乗物酔い','乗り物酔い','動揺病','メクリジン','ジフェニドール','スコポラミン']],
+    ['抗ヒスタミン成分',['抗ヒスタミン','クロルフェニラミン','ジフェンヒドラミン','クレマスチン','カルビノキサミン']],
+    ['解熱鎮痛成分',['解熱鎮痛','アセトアミノフェン','イブプロフェン','アスピリン','エテンザミド','イソプロピルアンチピリン']],
+    ['鎮咳成分',['鎮咳','デキストロメトルファン','ジヒドロコデイン','ノスカピン','チペピジン']],
+    ['去痰成分',['去痰','ブロムヘキシン','カルボシステイン','グアイフェネシン','エチルシステイン']],
+    ['制酸・胃粘膜保護',['制酸','胃粘膜保護','炭酸水素ナトリウム','スクラルファート','セトラキサート','テプレノン','ゲファルナート']],
+    ['瀉下成分',['瀉下','便秘薬','センノシド','ビサコジル','ピコスルファート','酸化マグネシウム']],
+    ['止瀉成分',['止瀉','下痢止め','ロペラミド','タンニン酸アルブミン','次硝酸ビスマス','ベルベリン','木クレオソート']],
+    ['一般用検査薬',['一般用検査薬','妊娠検査薬','尿糖・尿タンパク検査薬','尿糖検査薬','尿タンパク検査薬']],
+    ['医薬品販売制度',['要指導医薬品','第一類医薬品','第1類医薬品','第二類医薬品','第2類医薬品','第三類医薬品','第3類医薬品','指定第二類','指定第2類']],
+    ['医薬品広告',['広告','誇大広告','虚偽広告','承認前医薬品']],
+    ['副作用救済制度',['副作用被害救済制度','医薬品副作用被害救済制度','救済給付']],
+    ['添付文書・安全性情報',['添付文書','使用上の注意','安全性情報','緊急安全性情報','安全性速報']],
+    ['濫用等のおそれのある医薬品',['濫用等のおそれ','指定濫用防止','頻回購入','若年者確認']]
+  ];
   function normalizedTopicKey(v){return cleanText(v).normalize('NFKC').replace(/[\s　、。・（）()「」『』]/g,'').replace(/(?:に関する|について|の記述|次の記述)$/g,'')}
   function canonicalIngredientName(value){
     return String(value??'').replace(/(?:塩酸塩|臭化物|硫酸塩|硝酸塩|マレイン酸塩|フマル酸塩|クエン酸塩|リン酸塩|ナトリウム|カリウム|カルシウム)$/,'');
@@ -695,6 +714,7 @@
     for(const term of TOPIC_TERMS)if(text.includes(term))keys.add(`term:${term}`);
     for(const term of KAMPO_TERMS)if(text.includes(term))keys.add(`kampo:${term}`);
     for(const term of INGREDIENT_TERMS)if(text.includes(term))keys.add(`ingredient:${canonicalIngredientName(term)}`);
+    for(const [group,terms] of SEMANTIC_TOPIC_GROUPS)if(terms.some(term=>text.includes(term)))keys.add(`group:${group}`);
     for(const m of text.matchAll(/[一-龯ァ-ヶー]{2,14}(?:湯|散|丸|飲|膏)(?!剤)/g))keys.add(`kampo:${m[0]}`);
     for(const m of text.matchAll(/[一-龯ァ-ヶー]{3,24}(?:塩酸塩|臭化物|硫酸塩|硝酸塩|マレイン酸塩|フマル酸塩|クエン酸塩|リン酸塩|ナトリウム|カリウム|カルシウム)/g)){
       const name=canonicalIngredientName(m[0]);
@@ -715,7 +735,7 @@
   function exceedsGlobalTopicLimit(candidate,selectedQuestions){
     const keys=topicKeys(candidate).filter(k=>!k.startsWith('source:'));
     for(const key of keys){
-      const limit=(key.startsWith('ingredient:')||key.startsWith('kampo:'))?2:3;
+      const limit=(key.startsWith('ingredient:')||key.startsWith('kampo:')||key.startsWith('term:'))?1:key.startsWith('group:')?2:2;
       let used=0;
       for(const q of selectedQuestions)if(topicKeys(q).includes(key))used++;
       if(used>=limit)return true;
@@ -758,6 +778,7 @@
     return false;
   }
   function isStructuralDuplicateOneByOne(candidate,selectedQuestions){
+    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
     const c=cleanText(candidate.statement);
     for(const prev of selectedQuestions){
       if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
@@ -774,6 +795,7 @@
   }
 
   function isNearDuplicateExam(candidate,selectedQuestions){
+    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
     const c=questionSemanticText(candidate);
     for(const prev of selectedQuestions){
       if(candidate.question_id===prev.question_id)return true;
@@ -878,7 +900,7 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.1";result.engineVersion="2.0.1";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_unknown_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="2.1.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"exam_distribution > unseen > light_weakness_bonus",topicPolicy:"same exact topic once per set and once per 120; nearby semantic category at most twice per 120",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
   window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
