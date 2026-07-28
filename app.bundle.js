@@ -922,11 +922,11 @@
 
   function getMeta(){try{return JSON.parse(localStorage.getItem(META_KEY)||'{}')}catch{return{}}}
   function patchMeta(patch){const next={...getMeta(),...patch};localStorage.setItem(META_KEY,JSON.stringify(next));return next}
-  function validTkdbObject(o){return !!(o&&typeof o==='object'&&o.records&&typeof o.records==='object'&&!Array.isArray(o.records)&&o.questionMap&&typeof o.questionMap==='object')}
+  function validTkdbObject(o){return !!(o&&typeof o==='object'&&o.records&&typeof o.records==='object'&&!Array.isArray(o.records))}
   function getKnowledge(id){return tkdbDb?.records?.[String(id)]||null}
   function getQuestionKnowledge(questionId){const qm=tkdbDb?.questionMap?.[String(questionId)];if(!qm)return[];return (qm.knowledgeIds||[]).map((id,index)=>({id:String(id),label:String.fromCharCode(97+index),record:getKnowledge(id)}))}
   function tkdbToExplanationRows(tkdb){
-    if(!validTkdbObject(tkdb))throw new Error('TKDB形式が不正です（recordsまたはquestionMapがありません）');
+    if(!validTkdbObject(tkdb))throw new Error('TKDB形式が不正です（recordsがありません）');
     tkdbDb=tkdb;
     const byCanonical=new Map();
     for(const [sourceId,r] of Object.entries(tkdb.records)){
