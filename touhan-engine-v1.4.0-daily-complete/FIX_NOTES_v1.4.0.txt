@@ -1,8 +1,0 @@
-問題生成エンジン v1.4.0 暫定完成版
-
-- 回答アプリ v14.1.0 の学習状況JSON schemaVersion 1.1に対応
-- 学習履歴と同時に詳しい解説を読み込み
-- 詳しい解説をブラウザ内TKDBオーバーライドへ永続保存
-- 次回生成問題へ detailedExplanation / correctKnowledge / commonTrap / memoryTip / relatedKnowledge を自動埋込
-- 同一knowledgeIdは上書き統合し、重複登録を回避
-- 従来schemaVersion 1.0の学習状況JSONも継続対応

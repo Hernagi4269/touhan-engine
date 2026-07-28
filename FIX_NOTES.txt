@@ -1,8 +1,0 @@
-仕様変更しました。
-
-v1.7.1
-- data/tkdb.jsonを生成時の唯一の知識データに変更しました。
-- data/question-explanations.jsonとフォールバック処理を削除しました。
-- v14.4.0の学習状況JSON（data.answers / data.wrongMeta）を生成優先度用questionsへ変換します。
-- 従来のquestions配列形式も読み込めます。
-- 分からない（unknownCount）を復習優先度、直近出題除外の解除、生成監査へ反映しました。
