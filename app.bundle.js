@@ -77,6 +77,20 @@
   window.TouhanValidator={validateQuestion,validateDatabase,structuredStatements};
 })();
 (function(){
+  let explanationByQuestion=new Map();
+  function setExplanationData(rows){
+    explanationByQuestion=new Map();
+    for(const row of (Array.isArray(rows)?rows:[])){
+      if(row?.questionId)explanationByQuestion.set(String(row.questionId),row);
+    }
+  }
+  function explanationForStatement(sourceQuestionId,label){
+    const row=explanationByQuestion.get(String(sourceQuestionId||''));
+    return row?.statements?.find(x=>String(x?.label||'').toLowerCase()===String(label||'').toLowerCase())||null;
+  }
+  function explanationsForQuestion(sourceQuestionId){
+    return explanationByQuestion.get(String(sourceQuestionId||''))?.statements||[];
+  }
   const DISTRIBUTIONS={
     one_by_one:{'第1章':5,'第2章':5,'第3章':10,'第4章':5,'第5章':5},
     practice60:{'第1章':10,'第2章':10,'第3章':20,'第4章':10,'第5章':10},
@@ -369,7 +383,18 @@
       shortExplanation:makeExamShortExplanation(q),
       explanation:makeExamShortExplanation(q),
       source_question_id:q.question_id,
-      topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:'))
+      topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:')),
+      statementExplanations:explanationsForQuestion(q.question_id).map(x=>({
+        label:x.label,
+        knowledgeId:x.knowledgeId,
+        correctAnswer:x.correctAnswer,
+        statement:x.statement,
+        shortExplanation:x.shortExplanation,
+        explanation:x.detailedExplanation,
+        correction:x.correction,
+        explanationStatus:x?.evidence?.status==='auto_matched'?'usable':'fallback',
+        evidence:x.evidence||null
+      }))
     };
   }
 
@@ -515,6 +540,37 @@
     return false;
   }
 
+  const KNOWN_CORRECTION_REGISTRY_VERSION='2026-07-28.1';
+  const KNOWN_ONE_BY_ONE_CORRECTIONS={
+    '2022:36:d':{
+      statement:'ショック（アナフィラキシー）は、発症すると病態が急速に悪化することが多く、適切な対応が遅れるとチアノーゼや呼吸困難等を生じ、死に至ることがある。'
+    },
+    '2024:19:a':{
+      statement:'HIV訴訟は、血友病患者が、HIVが混入した原料血漿から製造された血液凝固因子製剤の投与を受けたことにより、HIVに感染したことに対する損害賠償訴訟である。',
+      truth:true
+    },
+    '2022:115:a':{
+      statement:'緊急安全性情報は、厚生労働省からの命令、指示、製造販売業者の自主決定等に基づいて作成される。'
+    },
+    '2022:5:b':{
+      statement:'外用薬では、アレルギーは引き起こされない。',
+      truth:false
+    }
+  };
+  function applyKnownOneByOneCorrection(item,q){
+    const key=`${Number(q?.year)}:${Number(q?.question_no)}:${String(item?.label||'').toLowerCase()}`;
+    const correction=KNOWN_ONE_BY_ONE_CORRECTIONS[key];
+    if(!correction)return item;
+    return {
+      ...item,
+      statement:correction.statement||item.statement,
+      raw_statement:correction.statement||item.raw_statement,
+      truth:typeof correction.truth==='boolean'?correction.truth:item.truth,
+      correction_registry_version:KNOWN_CORRECTION_REGISTRY_VERSION,
+      correction_key:key
+    };
+  }
+
   function deriveOneByOne(q){
     const out=[];
     // 相談事例・症例問題は、個々の選択肢だけでは前提条件を失うため一問一答化しない。
@@ -529,7 +585,7 @@
         const statement=contextualizeStatement(q,rawStatement);
         out.push({question_id:`${q.question_id}_${key}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:rawStatement,source_context:sourceTopic(q),truth:truth[key],source_question_id:q.question_id,label:key});
       }
-      return out;
+      return out.map(item=>applyKnownOneByOneCorrection(item,q));
     }
     const prompt=cleanText(q.question_text,{stripQuestionNo:true}).split(/(?:１|1)[（(]?/)[0]||'';
     const choices=(q.choices||[]).map(cleanText);
@@ -539,7 +595,7 @@
       if(/誤っているものはどれか/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12){const statement=contextualizeStatement(q,text);out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:text,source_context:sourceTopic(q),truth:i!==answerIndex,source_question_id:q.question_id,label:String(i+1)});}});
       else if(/正しいものはどれか/.test(prompt)&&!/組合せ/.test(prompt))choices.forEach((text,i)=>{if(text.length>=12){const statement=contextualizeStatement(q,text);out.push({question_id:`${q.question_id}_choice_${i+1}`,year:q.year,question_no:q.question_no,chapter:q.chapter,statement,raw_statement:text,source_context:sourceTopic(q),truth:i===answerIndex,source_question_id:q.question_id,label:String(i+1)});}});
     }
-    return out;
+    return out.map(item=>applyKnownOneByOneCorrection(item,q));
   }
 
   function naturalStatementReasons(text){
@@ -729,9 +785,20 @@
   function buildOneByOnePool(questions){return questions.flatMap(deriveOneByOne).filter(x=>isNaturalStatement(x.statement))}
   function toOneByOneQuestion(q,no){
     const answer=q.truth?'○':'×';
-    const short=conciseOneByOneExplanation(q.statement,q.truth);
-    const detailed=detailedOneByOneExplanation(q.statement,q.truth,short);
-    return {no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,source:`過去問（東京都${q.year}年度 問${q.question_no}）`,source_question_id:q.source_question_id||'',topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:')),answer,text:cleanText(q.statement),shortExplanation:short,explanation:detailed,category:'one_by_one',category_label:'一問一答'};
+    const dbExp=explanationForStatement(q.source_question_id,q.label);
+    const generatedShort=conciseOneByOneExplanation(q.statement,q.truth);
+    const generatedDetailed=detailedOneByOneExplanation(q.statement,q.truth,generatedShort);
+    const short=dbExp?.shortExplanation||generatedShort;
+    const detailed=dbExp?.detailedExplanation||generatedDetailed;
+    const tkdbKnowledgeId=dbExp?.knowledgeId||null;
+    return {
+      no,chapter:q.chapter,theme:`東京都${q.year}年度`,knowledge_id:q.question_id,tkdb_knowledge_id:tkdbKnowledgeId,
+      source:`過去問（東京都${q.year}年度 問${q.question_no}）`,source_question_id:q.source_question_id||'',source_statement_id:q.question_id,
+      topic_keys:topicKeys(q).filter(k=>!k.startsWith('source:')),answer,text:cleanText(q.statement),
+      shortExplanation:short,explanation:detailed,correction:dbExp?.correction||null,
+      explanationStatus:dbExp?.evidence?.status==='auto_matched'?'usable':'fallback',evidence:dbExp?.evidence||null,
+      category:'one_by_one',category_label:'一問一答'
+    };
   }
 
   function pickByDistribution(pool,distribution,random,blocked,selected,selectedQuestions=[],duplicateGuard=null,topicSet=null){const picked=[];for(const [chapter,count] of Object.entries(distribution))picked.push(...pick(pool.filter(q=>q.chapter===chapter),count,random,blocked,selected,selectedQuestions,duplicateGuard,topicSet));return picked}
@@ -811,20 +878,34 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.1";result.engineVersion="1.3.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="1.6.1";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
+  window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
 })();
 (function(){
-  let rawDb=null, report=null, generated=null;
+  let rawDb=null, explanationDb=null, report=null, generated=null;
   const $=id=>document.getElementById(id);
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function setStatus(text,type=''){const e=$('generatorStatus');e.textContent=text;e.className='status-box '+type}
   function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
   function modeSlug(){const m=$('genMode').value;return m==='one_by_one'?'onebyone':m==='practice60'?'practice60':'exam120'}
   function syncMeta(){const n=Math.max(1,Number($('genRound').value)||1),d=$('genDate').value||today(),kind=$('genKind').value;$('genDayId').value=`study-${d.replaceAll('-','')}-${modeSlug()}-${kind}-${String(n).padStart(2,'0')}`;$('genTitle').value=TouhanGenerator.generatedTitle(d,kind,n);const m=$('genMode').value;$('generateDailyBtn').textContent=m==='one_by_one'?'一問一答を生成':m==='practice60'?'総合演習を生成':'本番問題を生成';$('downloadSetsBtn').textContent=m==='one_by_one'?'4セット個別保存':'前半・後半を個別保存'}
-  async function loadBundled(){setStatus('DBを読み込んでいます…');const r=await fetch('./data/tokyo_master.json',{cache:'no-store'});if(!r.ok)throw new Error(`DB読込失敗: ${r.status}`);rawDb=await r.json();setStatus(`DB読込完了：${rawDb.questions?.length||0}問`,'ok');return rawDb}
+  async function loadBundled(){
+    setStatus('問題DB・解説DBを読み込んでいます…');
+    const [masterRes,expRes]=await Promise.all([
+      fetch('./data/tokyo_master.json',{cache:'no-store'}),
+      fetch('./data/question-explanations.json',{cache:'no-store'})
+    ]);
+    if(!masterRes.ok)throw new Error(`問題DB読込失敗: ${masterRes.status}`);
+    if(!expRes.ok)throw new Error(`解説DB読込失敗: ${expRes.status}`);
+    rawDb=await masterRes.json();
+    explanationDb=await expRes.json();
+    TouhanGenerator.setExplanationData(explanationDb);
+    const statementCount=explanationDb.reduce((n,q)=>n+(q.statements?.length||0),0);
+    setStatus(`DB読込完了：${rawDb.questions?.length||0}問／解説${statementCount}記述`,'ok');
+    return rawDb;
+  }
   async function ensureDb(){if(rawDb)return rawDb;return loadBundled()}
   function renderValidation(r){
     $('validationSummary').innerHTML=[['総数',r.total],['使用可能',r.validCount],['除外',r.invalidCount],['ID重複',r.duplicateIds.length]].map(([k,v])=>`<div class="summary-item">${esc(k)}<b>${esc(v)}</b></div>`).join('');
