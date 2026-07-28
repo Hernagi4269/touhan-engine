@@ -1,7 +1,15 @@
-登録販売者 過去問エンジン v1.7.1
+登録販売者 過去問エンジン v2.0.0
 
-- TKDB JSONを唯一の知識データとして使用
-- question-explanations.json依存を廃止
-- 解答アプリ v14.4.0 の分離型学習状況JSON（data.answers / data.wrongMeta）を直接読込可能
-- 旧questions配列形式も継続対応
-- 「分からない」を誤答・迷ったと同様に復習優先度へ反映
+主な変更
+- TKDBを唯一の知識データとして使用
+- 学習状況JSONとTKDB JSONを分離管理
+- 対応ブラウザではFile System Access APIで選択ファイルを再利用
+- 非対応ブラウザでは従来のファイル選択へ自動フォールバック
+- IndexedDBへTKDBキャッシュとファイルハンドルを保存
+- データカードを省スペース化し、読込状態・更新時刻・件数を表示
+- window.TouhanTKDB.getKnowledge() / getQuestionKnowledge() を追加
+- 生成JSONのengineVersionを2.0.0へ更新
+
+注意
+- ブラウザのセキュリティ仕様により、権限が失効した場合は「更新」または「選択」が必要です。
+- ブラウザ実操作は未確認です。

@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>登録販売者 過去問エンジン v1.7.2</title>
+<title>登録販売者 過去問エンジン v2.0.0</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.7;margin:16px;}
 button{font-size:16px;padding:10px 12px;margin:4px;}
@@ -20,31 +20,61 @@ textarea{height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12px;}
 .card{border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0;}
 .small{font-size:13px;color:#666;}
 
-.mode-tabs{display:flex;gap:8px;margin:16px 0}.mode-tab{background:#eee}.mode-tab.active,.primary{background:#1257c7;color:#fff}.hidden{display:none}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.button-row{display:flex;flex-wrap:wrap;gap:6px}.file-label{display:block;margin-top:12px}.status-box{padding:10px;border-radius:8px;background:#f4f6f8;margin-top:10px}.status-box.ok{background:#e8f5e9;color:#145a1f}.status-box.err{background:#ffebee;color:#9a0015}.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.summary-item{background:#f5f5f5;border-radius:8px;padding:10px}.summary-item b{display:block;font-size:20px}.large-json{height:360px}.hero-card{border-color:#b8c9e8}pre{white-space:pre-wrap;word-break:break-word}.data-card{padding:10px 12px}.data-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.data-card-head h2{margin:0;font-size:18px}.data-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.data-item{display:flex;align-items:center;gap:9px;min-width:0;border:1px solid #e1e5ea;border-radius:9px;padding:8px 9px;background:#fafbfc}.data-icon{font-size:20px;line-height:1}.data-body{min-width:0;flex:1}.data-name{font-weight:700;font-size:14px}.data-status{font-size:12px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.data-status.ready{color:#176b2c}.compact-btn{font-size:13px;padding:6px 9px;margin:0}.data-actions{display:flex;gap:6px;flex-wrap:wrap}.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}@media(max-width:600px){.grid2{grid-template-columns:1fr}.data-grid{grid-template-columns:1fr}.data-card-head{align-items:flex-start}.data-actions{justify-content:flex-end}}</style>
+.mode-tabs{display:flex;gap:8px;margin:16px 0}.mode-tab{background:#eee}.mode-tab.active,.primary{background:#1257c7;color:#fff}.hidden{display:none}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.button-row{display:flex;flex-wrap:wrap;gap:6px}.file-label{display:block;margin-top:12px}.status-box{padding:10px;border-radius:8px;background:#f4f6f8;margin-top:10px}.status-box.ok{background:#e8f5e9;color:#145a1f}.status-box.err{background:#ffebee;color:#9a0015}.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.summary-item{background:#f5f5f5;border-radius:8px;padding:10px}.summary-item b{display:block;font-size:20px}.large-json{height:360px}.hero-card{border-color:#b8c9e8}pre{white-space:pre-wrap;word-break:break-word}.data-card{padding:10px 12px}.data-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.data-card-head h2{margin:0;font-size:18px}.data-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.data-item{display:flex;align-items:center;gap:9px;min-width:0;border:1px solid #e1e5ea;border-radius:9px;padding:8px 9px;background:#fafbfc}.data-icon{font-size:20px;line-height:1}.data-body{min-width:0;flex:1}.data-name{font-weight:700;font-size:14px}.data-status{font-size:12px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.data-status.ready{color:#176b2c}.compact-btn{font-size:13px;padding:6px 9px;margin:0}.data-actions{display:flex;gap:6px;flex-wrap:wrap}.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}@media(max-width:600px){.grid2{grid-template-columns:1fr}.data-grid{grid-template-columns:1fr}.data-card-head{align-items:flex-start}.data-actions{justify-content:flex-end}}
+.data-card{background:linear-gradient(180deg,#fff 0%,#fbfcfe 100%);box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.data-card-head{min-height:32px}.data-card-head h2{display:flex;align-items:center;gap:7px}.data-card-head h2::before{content:"";width:8px;height:8px;border-radius:999px;background:#1257c7;box-shadow:0 0 0 4px rgba(18,87,199,.10)}
+.data-item{position:relative;transition:border-color .15s,background .15s}.data-item:hover{border-color:#c8d4e5;background:#fff}.data-item.is-ready{border-color:#cfe5d3;background:#f8fcf8}.data-item.is-warning{border-color:#ead8a6;background:#fffdf7}
+.data-status-line{display:flex;align-items:center;gap:6px;min-width:0}.status-dot{width:7px;height:7px;border-radius:999px;background:#98a2b3;flex:none}.status-dot.ready{background:#2e8b47}.status-dot.warning{background:#c88719}.status-dot.error{background:#b42318}
+.data-meta{font-size:11px;color:#98a2b3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}.data-item-actions{display:flex;gap:4px;align-items:center}.icon-btn{font-size:13px;padding:5px 8px;margin:0;border:1px solid #d0d5dd;border-radius:7px;background:#fff;cursor:pointer}.icon-btn:hover{background:#f2f4f7}.icon-btn:disabled{opacity:.45;cursor:not-allowed}
+.data-details{margin-top:8px;border-top:1px solid #eaecf0;padding-top:8px}.data-details summary{font-size:12px;color:#667085;cursor:pointer;user-select:none}.data-details-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:7px}.data-detail{background:#f5f7fa;border-radius:7px;padding:6px 8px;font-size:11px;color:#667085}.data-detail b{display:block;color:#344054;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:600px){.data-details-grid{grid-template-columns:1fr}.data-item-actions{align-self:stretch}.icon-btn{min-width:52px}}
+</style>
 <link rel="apple-touch-icon" href="./icon-192.png"><link rel="manifest" href="./manifest.webmanifest"></head>
 <body>
-<h1>登録販売者 過去問エンジン v1.7.2</h1>
-<p class="small">過去問DBと解説DBを統合し、一問一答120問／総合演習60問／本番形式120問を解説付きで生成します。</p><section class="mode-panel" id="generatorPanel">
-<div class="card data-card">
+<h1>登録販売者 過去問エンジン v2.0.0</h1>
+<p class="small">問題DB・TKDB・学習状況を分離管理し、一問一答120問／総合演習60問／本番形式120問を生成します。</p><section class="mode-panel" id="generatorPanel">
+<div class="card data-card" id="dataCard">
   <div class="data-card-head">
     <h2>データ</h2>
     <div class="data-actions">
       <button class="compact-btn" id="reloadDataBtn" type="button">再読込</button>
-      <button class="compact-btn" id="resetDataBtn" type="button">内蔵へ戻す</button>
+      <button class="compact-btn" id="resetDataBtn" type="button">初期化</button>
     </div>
   </div>
   <div class="data-grid">
-    <div class="data-item">
+    <div class="data-item" id="learningDataItem">
       <span class="data-icon" aria-hidden="true">🧠</span>
-      <div class="data-body"><div class="data-name">学習状況</div><div class="data-status" id="learningCompactStatus">未読込</div></div>
-      <button class="compact-btn" id="chooseLearningBtn" type="button">選択</button>
+      <div class="data-body">
+        <div class="data-name">学習状況</div>
+        <div class="data-status-line"><span class="status-dot" id="learningStatusDot"></span><div class="data-status" id="learningCompactStatus">未読込</div></div>
+        <div class="data-meta" id="learningMetaStatus">学習状況JSONを選択してください</div>
+      </div>
+      <div class="data-item-actions">
+        <button class="icon-btn" id="refreshLearningBtn" type="button" title="同じファイルから再読込">更新</button>
+        <button class="icon-btn" id="chooseLearningBtn" type="button">選択</button>
+      </div>
     </div>
-    <div class="data-item">
+    <div class="data-item" id="tkdbDataItem">
       <span class="data-icon" aria-hidden="true">📚</span>
-      <div class="data-body"><div class="data-name">TKDB</div><div class="data-status" id="tkdbCompactStatus">内蔵データを使用</div></div>
-      <button class="compact-btn" id="chooseTkdbBtn" type="button">選択</button>
+      <div class="data-body">
+        <div class="data-name">TKDB</div>
+        <div class="data-status-line"><span class="status-dot ready" id="tkdbStatusDot"></span><div class="data-status ready" id="tkdbCompactStatus">内蔵データを使用</div></div>
+        <div class="data-meta" id="tkdbMetaStatus">data/tkdb.json</div>
+      </div>
+      <div class="data-item-actions">
+        <button class="icon-btn" id="refreshTkdbBtn" type="button" title="同じファイルから再読込">更新</button>
+        <button class="icon-btn" id="chooseTkdbBtn" type="button">選択</button>
+      </div>
     </div>
   </div>
+  <details class="data-details">
+    <summary>データ詳細</summary>
+    <div class="data-details-grid">
+      <div class="data-detail">問題DB<b id="masterDetail">未読込</b></div>
+      <div class="data-detail">学習状況<b id="learningDetail">未読込</b></div>
+      <div class="data-detail">TKDB<b id="tkdbDetail">未読込</b></div>
+    </div>
+  </details>
   <input class="visually-hidden" accept="application/json,.json" id="learningFile" type="file"/>
   <input class="visually-hidden" accept="application/json,.json" id="tkdbFile" type="file"/>
 </div>
@@ -80,8 +110,8 @@ textarea{height:220px;font-family:ui-monospace,Menlo,monospace;font-size:12px;}
 <textarea class="large-json" id="generatedJson" placeholder="生成後のアプリ互換JSONが表示されます"></textarea>
 </div>
 </section>
-<footer class="small" style="margin-top:18px;border-top:1px solid #ddd;padding-top:10px">公開版: v1.7.2 / DB: Tokyo 2021–2025・600問</footer>
-<script src="app.bundle.js?v=1.7.1"></script>
+<footer class="small" style="margin-top:18px;border-top:1px solid #ddd;padding-top:10px">公開版: v2.0.0 / DB: Tokyo 2021–2025・600問</footer>
+<script src="app.bundle.js?v=2.0.0"></script>
 <script>
 window.addEventListener('load', function(){
   setTimeout(function(){
@@ -97,7 +127,7 @@ window.addEventListener('load', function(){
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      const reg = await navigator.serviceWorker.register("./service-worker.js?v=1.7.1", { updateViaCache: "none" });
+      const reg = await navigator.serviceWorker.register("./service-worker.js?v=2.0.0", { updateViaCache: "none" });
       await reg.update();
     } catch (e) { console.warn("Service Worker registration failed", e); }
   });

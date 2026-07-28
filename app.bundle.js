@@ -878,22 +878,42 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.1";result.engineVersion="1.7.1";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_unknown_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="2.0.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"unseen > wrong_or_unknown_or_uncertain > seen",topicPolicy:"same ingredient/kampo once per 30 questions, at most twice per 120 questions",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
   window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
-})();
+})()
 (function(){
-  let rawDb=null, explanationDb=null, report=null, generated=null, tkdbDb=null;
-  const TKDB_IDB_NAME='touhan_engine_tkdb_v1',TKDB_IDB_KEY='active_tkdb',TKDB_META_KEY='touhan.engine.tkdb.meta.v1';
+  let rawDb=null, report=null, generated=null, tkdbDb=null;
+  const TKDB_IDB_NAME='touhan_engine_data_v2';
+  const TKDB_IDB_VERSION=1;
+  const STORE_CONTENT='content';
+  const STORE_HANDLES='handles';
+  const TKDB_CONTENT_KEY='active_tkdb';
+  const HANDLE_LEARNING='learning_handle';
+  const HANDLE_TKDB='tkdb_handle';
+  const META_KEY='touhan.engine.data.meta.v2';
+  const supportsFileHandles=typeof window.showOpenFilePicker==='function';
   const $=id=>document.getElementById(id);
-  function validTkdbObject(o){return !!(o&&typeof o==='object'&&o.records&&typeof o.records==='object'&&!Array.isArray(o.records))}
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function getMeta(){try{return JSON.parse(localStorage.getItem(META_KEY)||'{}')}catch{return{}}}
+  function patchMeta(patch){const next={...getMeta(),...patch};localStorage.setItem(META_KEY,JSON.stringify(next));return next}
+  function validTkdbObject(o){return !!(o&&typeof o==='object'&&o.records&&typeof o.records==='object'&&!Array.isArray(o.records)&&o.questionMap&&typeof o.questionMap==='object')}
+  function getKnowledge(id){return tkdbDb?.records?.[String(id)]||null}
+  function getQuestionKnowledge(questionId){const qm=tkdbDb?.questionMap?.[String(questionId)];if(!qm)return[];return (qm.knowledgeIds||[]).map((id,index)=>({id:String(id),label:String.fromCharCode(97+index),record:getKnowledge(id)}))}
   function tkdbToExplanationRows(tkdb){
-    if(!validTkdbObject(tkdb))throw new Error('TKDB形式が不正です（recordsがありません）');
-    const records=Object.entries(tkdb.records),byCanonical=new Map();
-    for(const [sourceId,r] of records){const id=String(r?.tkdbKnowledgeId||'').trim();if(id){if(!byCanonical.has(id))byCanonical.set(id,[]);byCanonical.get(id).push({sourceId,...r})}}
+    if(!validTkdbObject(tkdb))throw new Error('TKDB形式が不正です（recordsまたはquestionMapがありません）');
+    tkdbDb=tkdb;
+    const byCanonical=new Map();
+    for(const [sourceId,r] of Object.entries(tkdb.records)){
+      const id=String(r?.tkdbKnowledgeId||sourceId||'').trim();
+      if(!id)continue;
+      if(!byCanonical.has(id))byCanonical.set(id,[]);
+      byCanonical.get(id).push({sourceId,...r});
+    }
     const rows=[];
-    for(const [questionId,qm] of Object.entries(tkdb.questionMap||{})){
+    for(const [questionId,qm] of Object.entries(tkdb.questionMap)){
       const statements=(qm.knowledgeIds||[]).map((canonicalId,i)=>{
         const expected=`${questionId}_${String.fromCharCode(97+i)}`;
         const candidates=byCanonical.get(String(canonicalId))||[];
@@ -905,122 +925,90 @@
     if(!rows.length)throw new Error('TKDBのquestionMapが空です');
     return rows;
   }
-  function openTkdbDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(TKDB_IDB_NAME,1);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('files'))db.createObjectStore('files')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-  async function saveTkdb(obj){const db=await openTkdbDb();await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put(obj,TKDB_IDB_KEY);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
-  async function loadSavedTkdb(){try{const db=await openTkdbDb();const value=await new Promise((resolve,reject)=>{const tx=db.transaction('files','readonly');const req=tx.objectStore('files').get(TKDB_IDB_KEY);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)});db.close();return value}catch{return null}}
-  async function clearSavedTkdb(){try{const db=await openTkdbDb();await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').delete(TKDB_IDB_KEY);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}catch{}localStorage.removeItem(TKDB_META_KEY)}
-  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function openDataDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(TKDB_IDB_NAME,TKDB_IDB_VERSION);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORE_CONTENT))db.createObjectStore(STORE_CONTENT);if(!db.objectStoreNames.contains(STORE_HANDLES))db.createObjectStore(STORE_HANDLES)};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+  async function idbPut(store,key,value){const db=await openDataDb();try{await new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
+  async function idbGet(store,key){try{const db=await openDataDb();try{return await new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly');const req=tx.objectStore(store).get(key);req.onsuccess=()=>resolve(req.result||null);req.onerror=()=>reject(req.error)})}finally{db.close()}}catch{return null}}
+  async function idbDelete(store,key){try{const db=await openDataDb();try{await new Promise((resolve,reject)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}catch{}}
+  async function clearExternalData(){await Promise.all([idbDelete(STORE_CONTENT,TKDB_CONTENT_KEY),idbDelete(STORE_HANDLES,HANDLE_TKDB),idbDelete(STORE_HANDLES,HANDLE_LEARNING)]);localStorage.removeItem(META_KEY)}
+
+  async function handlePermission(handle,request=false){if(!handle)return false;const opts={mode:'read'};if((await handle.queryPermission(opts))==='granted')return true;if(request&&(await handle.requestPermission(opts))==='granted')return true;return false}
+  async function readJsonHandle(handle,request=false){if(!await handlePermission(handle,request))throw new Error('ファイルの読み取り権限がありません');const file=await handle.getFile();return {file,json:JSON.parse(await file.text())}}
+  async function pickJsonHandle(){const [handle]=await window.showOpenFilePicker({multiple:false,types:[{description:'JSON',accept:{'application/json':['.json']}}]});return handle}
+
   function setStatus(text,type=''){const e=$('generatorStatus');e.textContent=text;e.className='status-box '+type}
   function today(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
   function modeSlug(){const m=$('genMode').value;return m==='one_by_one'?'onebyone':m==='practice60'?'practice60':'exam120'}
   function syncMeta(){const n=Math.max(1,Number($('genRound').value)||1),d=$('genDate').value||today(),kind=$('genKind').value;$('genDayId').value=`study-${d.replaceAll('-','')}-${modeSlug()}-${kind}-${String(n).padStart(2,'0')}`;$('genTitle').value=TouhanGenerator.generatedTitle(d,kind,n);const m=$('genMode').value;$('generateDailyBtn').textContent=m==='one_by_one'?'一問一答を生成':m==='practice60'?'総合演習を生成':'本番問題を生成';$('downloadSetsBtn').textContent=m==='one_by_one'?'4セット個別保存':'前半・後半を個別保存'}
+  function setDataVisual(kind,{ready=false,warning=false,status='',meta='',detail=''}){const cap=kind[0].toUpperCase()+kind.slice(1);const item=$(`${kind}DataItem`),dot=$(`${kind}StatusDot`),statusEl=$(`${kind}CompactStatus`),metaEl=$(`${kind}MetaStatus`),detailEl=$(`${kind}Detail`);if(item)item.className=`data-item${ready?' is-ready':warning?' is-warning':''}`;if(dot)dot.className=`status-dot${ready?' ready':warning?' warning':''}`;if(statusEl){statusEl.textContent=status;statusEl.className=`data-status${ready?' ready':''}`};if(metaEl)metaEl.textContent=meta;if(detailEl)detailEl.textContent=detail||status}
+  function learningState(){try{return JSON.parse(localStorage.getItem(TouhanGenerator.LEARNING_KEY)||'null')}catch{return null}}
   function updateCompactStatuses(){
-    const le=$('learningCompactStatus'),te=$('tkdbCompactStatus');
-    let state=null;try{state=JSON.parse(localStorage.getItem(TouhanGenerator.LEARNING_KEY)||'null')}catch{}
-    const h=(()=>{try{return JSON.parse(localStorage.getItem(TouhanGenerator.HISTORY_KEY)||'[]')}catch{return[]}})();
-    if(le){if(state?.questions){const wrong=state.questions.filter(x=>(x.wrongCount||0)>0).length,unknown=state.questions.filter(x=>(x.unknownCount||0)>0).length;le.textContent=`${state.questions.length}問・誤答${wrong}・不明${unknown}｜履歴${h.length}`;le.className='data-status ready'}else{le.textContent=`未読込｜生成履歴${h.length}`;le.className='data-status'}}
-    if(te){let meta=null;try{meta=JSON.parse(localStorage.getItem(TKDB_META_KEY)||'null')}catch{}const count=Object.keys(tkdbDb?.records||{}).length;te.textContent=meta?`${meta.name||'TKDB'}${meta.version?` / ${meta.version}`:''}（${count}件）`:`内蔵TKDB${tkdbDb?.tkdbVersion?` / ${tkdbDb.tkdbVersion}`:''}（${count}件）`;te.className='data-status ready'}
+    const state=learningState(),history=(()=>{try{return JSON.parse(localStorage.getItem(TouhanGenerator.HISTORY_KEY)||'[]')}catch{return[]}})(),meta=getMeta();
+    if(state?.questions){const wrong=state.questions.filter(x=>(x.wrongCount||0)>0).length,unknown=state.questions.filter(x=>(x.unknownCount||0)>0).length;setDataVisual('learning',{ready:true,status:`${state.questions.length}知識・要復習${wrong+unknown}`,meta:meta.learning?.name?`${meta.learning.name}｜${formatTime(meta.learning.at)}`:`保存済み｜履歴${history.length}`,detail:`${state.questions.length}知識 / 誤答${wrong} / 不明${unknown}`})}else setDataVisual('learning',{warning:true,status:'未読込',meta:supportsFileHandles?'JSON選択後は次回から自動再読込':'学習状況JSONを選択してください',detail:'未読込'});
+    const count=Object.keys(tkdbDb?.records||{}).length,version=tkdbDb?.tkdbVersion||'';
+    if(tkdbDb)setDataVisual('tkdb',{ready:true,status:meta.tkdb?.name?`${count}知識・外部`:`${count}知識・内蔵`,meta:meta.tkdb?.name?`${meta.tkdb.name}${version?` / ${version}`:''}｜${formatTime(meta.tkdb.at)}`:`data/tkdb.json${version?` / ${version}`:''}`,detail:`${count}知識 / ${Object.keys(tkdbDb.questionMap||{}).length}問対応`});
+    if($('masterDetail'))$('masterDetail').textContent=rawDb?`${rawDb.questions?.length||0}問`:'未読込';
+    if($('refreshLearningBtn'))$('refreshLearningBtn').disabled=!supportsFileHandles||!meta.learning?.handleStored;
+    if($('refreshTkdbBtn'))$('refreshTkdbBtn').disabled=!supportsFileHandles||!meta.tkdb?.handleStored;
   }
-  async function applyTkdb(obj,meta=null,persist=false){
-    const rows=tkdbToExplanationRows(obj);tkdbDb=obj;explanationDb=rows;TouhanGenerator.setExplanationData(rows);
-    if(persist){await saveTkdb(obj);localStorage.setItem(TKDB_META_KEY,JSON.stringify(meta||{name:'TKDB',version:obj.tkdbVersion||'',at:new Date().toISOString()}))}
-    updateCompactStatuses();return rows.reduce((n,q)=>n+(q.statements?.length||0),0);
-  }
+  function formatTime(value){if(!value)return'';const d=new Date(value);if(!Number.isFinite(d.getTime()))return'';return new Intl.DateTimeFormat('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)}
+
+  async function applyTkdb(obj,meta=null,persist=false){const rows=tkdbToExplanationRows(obj);TouhanGenerator.setExplanationData(rows);if(persist)await idbPut(STORE_CONTENT,TKDB_CONTENT_KEY,obj);if(meta)patchMeta({tkdb:meta});updateCompactStatuses();return rows.reduce((n,q)=>n+(q.statements?.length||0),0)}
   async function loadBundled(){
     setStatus('問題DB・TKDBを読み込んでいます…');
-    const masterRes=await fetch('./data/tokyo_master.json',{cache:'no-store'});
-    if(!masterRes.ok)throw new Error(`問題DB読込失敗: ${masterRes.status}`);
-    rawDb=await masterRes.json();
-    let saved=await loadSavedTkdb(),statementCount=0;
-    if(saved){try{statementCount=await applyTkdb(saved,null,false)}catch(e){console.warn('保存TKDBを使用できません',e);await clearSavedTkdb();saved=null}}
-    if(!saved){
-      const tkdbRes=await fetch('./data/tkdb.json',{cache:'no-store'});
-      if(!tkdbRes.ok)throw new Error(`TKDB読込失敗: ${tkdbRes.status}`);
-      statementCount=await applyTkdb(await tkdbRes.json(),null,false);
-    }
-    setStatus(`DB読込完了：${rawDb.questions?.length||0}問／TKDB解説${statementCount}記述`,'ok');updateCompactStatuses();return rawDb;
+    const masterRes=await fetch('./data/tokyo_master.json',{cache:'no-store'});if(!masterRes.ok)throw new Error(`問題DB読込失敗: ${masterRes.status}`);rawDb=await masterRes.json();
+    let active=null,statementCount=0;
+    const handle=await idbGet(STORE_HANDLES,HANDLE_TKDB);
+    if(handle){try{const r=await readJsonHandle(handle,false);statementCount=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);active='handle'}catch(e){console.warn('TKDBファイルの自動再読込をスキップ',e)}}
+    if(!active){const cached=await idbGet(STORE_CONTENT,TKDB_CONTENT_KEY);if(cached){try{statementCount=await applyTkdb(cached,null,false);active='cache'}catch(e){console.warn('保存TKDBを使用できません',e);await idbDelete(STORE_CONTENT,TKDB_CONTENT_KEY)}}}
+    if(!active){const res=await fetch('./data/tkdb.json',{cache:'no-store'});if(!res.ok)throw new Error(`TKDB読込失敗: ${res.status}`);statementCount=await applyTkdb(await res.json(),null,false)}
+    await tryAutoReloadLearning();
+    setStatus(`DB読込完了：${rawDb.questions?.length||0}問／TKDB ${statementCount}記述`,'ok');updateCompactStatuses();return rawDb;
   }
-  async function ensureDb(){if(rawDb)return rawDb;return loadBundled()}
-  function renderValidation(r){
-    $('validationSummary').innerHTML=[['総数',r.total],['使用可能',r.validCount],['除外',r.invalidCount],['ID重複',r.duplicateIds.length]].map(([k,v])=>`<div class="summary-item">${esc(k)}<b>${esc(v)}</b></div>`).join('');
-    $('validationDetails').textContent=r.invalid.slice(0,200).map(x=>`${x.id} (${x.year||'-'} 問${x.no||'-'}): ${x.reasons.join(' / ')}`).join('\n')||'除外なし';
-  }
+  async function tryAutoReloadLearning(){const handle=await idbGet(STORE_HANDLES,HANDLE_LEARNING);if(!handle)return false;try{const r=await readJsonHandle(handle,false);await applyLearning(r.json,{name:r.file.name,at:new Date().toISOString(),handleStored:true});return true}catch(e){console.warn('学習状況の自動再読込をスキップ',e);return false}}
+  async function ensureDb(){if(rawDb&&tkdbDb)return rawDb;return loadBundled()}
+  function renderValidation(r){$('validationSummary').innerHTML=[['総数',r.total],['使用可能',r.validCount],['除外',r.invalidCount],['ID重複',r.duplicateIds.length]].map(([k,v])=>`<div class="summary-item">${esc(k)}<b>${esc(v)}</b></div>`).join('');$('validationDetails').textContent=r.invalid.slice(0,200).map(x=>`${x.id} (${x.year||'-'} 問${x.no||'-'}): ${x.reasons.join(' / ')}`).join('\n')||'除外なし'}
   async function validate(){await ensureDb();report=TouhanValidator.validateDatabase(rawDb);renderValidation(report);setStatus(`品質検査完了：${report.validCount}/${report.total}問を使用可能`,'ok');return report}
-  function renderGenerated(data){
-    const qs=data.sets.flatMap(s=>s.questions), chapters={};qs.forEach(q=>chapters[q.chapter]=(chapters[q.chapter]||0)+1);
-    $('generationSummary').innerHTML=[['セット',data.sets.length],['問題数',qs.length],...Object.entries(chapters)].map(([k,v])=>`<div class="summary-item">${esc(k)}<b>${esc(v)}</b></div>`).join('');
-    $('generatedJson').value=JSON.stringify(data,null,2);
-  }
+  function renderGenerated(data){const qs=data.sets.flatMap(s=>s.questions),chapters={};qs.forEach(q=>chapters[q.chapter]=(chapters[q.chapter]||0)+1);$('generationSummary').innerHTML=[['セット',data.sets.length],['問題数',qs.length],...Object.entries(chapters)].map(([k,v])=>`<div class="summary-item">${esc(k)}<b>${esc(v)}</b></div>`).join('');$('generatedJson').value=JSON.stringify(data,null,2)}
   function download(name,obj){const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}
-  function renderLearningStatus(){updateCompactStatuses()}
+
   function normalizeLearningState(o){
     if(o?.type!=='touhan_learning_state')throw new Error('学習状況JSONではありません');
     if(Array.isArray(o.questions))return {...o,schemaVersion:o.schemaVersion||'1.2'};
-    const answers=o?.data?.answers;
-    const wrongMeta=o?.data?.wrongMeta;
-    if(!answers||typeof answers!=='object')throw new Error('学習状況JSONにquestionsまたはdata.answersがありません');
-    const map=new Map();
-    const ensure=id=>{
-      id=String(id||'').trim();if(!id)return null;
-      if(!map.has(id))map.set(id,{knowledgeId:id,shownCount:0,answeredCount:0,correctCount:0,wrongCount:0,uncertainCount:0,unknownCount:0,lastResult:'',lastAnsweredAt:''});
-      return map.get(id);
-    };
-    for(const st of Object.values(answers)){
-      if(!st||typeof st!=='object')continue;
-      const rows=Array.isArray(st.questionResults)?st.questionResults:[];
-      for(const r of rows){
-        const x=ensure(r?.knowledgeId);if(!x)continue;
-        x.shownCount++;if(r.userAnswer)x.answeredCount++;
-        if(r.userAnswer){if(r.isCorrect)x.correctCount++;else x.wrongCount++;}
-        if(r.wasUnsure)x.uncertainCount++;
-        if(r.wasUnknown)x.unknownCount++;
-        x.lastResult=r.isCorrect?(r.wasUnknown?'unknown':r.wasUnsure?'uncertain':'correct'):'wrong';
-        const at=st.gradedAt||st.updated||'';if(at&&(!x.lastAnsweredAt||Date.parse(at)>Date.parse(x.lastAnsweredAt)))x.lastAnsweredAt=at;
-      }
-    }
-    if(wrongMeta&&typeof wrongMeta==='object'){
-      for(const [key,m] of Object.entries(wrongMeta)){
-        if(!m||typeof m!=='object')continue;
-        let id=String(m.questionKey||key||'').trim();
-        if(!/^tokyo_\d{4}_\d{3}(?:_[a-z])?$/.test(id)){
-          const ex=String(m.sourceExamId||'');const no=Number(m.sourceNo);
-          const ym=ex.match(/tokyo[_-]?(20\d{2})/i);if(ym&&Number.isFinite(no))id=`tokyo_${ym[1]}_${String(no).padStart(3,'0')}`;else continue;
-        }
-        const x=ensure(id);if(!x)continue;
-        x.shownCount=Math.max(x.shownCount,Number(m.attempts)||0);
-        x.answeredCount=Math.max(x.answeredCount,Number(m.attempts)||0);
-        x.correctCount=Math.max(x.correctCount,Number(m.correctCount)||0);
-        x.wrongCount=Math.max(x.wrongCount,Number(m.wrongCount)||0);
-        x.uncertainCount=Math.max(x.uncertainCount,Number(m.unsureCount)||0);
-        x.unknownCount=Math.max(x.unknownCount,Number(m.unknownCount)||0);
-        if(m.lastResult)x.lastResult=String(m.lastResult);
-        if(m.lastAnsweredAt&&(!x.lastAnsweredAt||Date.parse(m.lastAnsweredAt)>Date.parse(x.lastAnsweredAt)))x.lastAnsweredAt=m.lastAnsweredAt;
-      }
-    }
-    const questions=[...map.values()];
-    if(!questions.length)throw new Error('学習履歴からknowledgeIdを取得できません。採点済み問題を含む学習状況JSONを使用してください');
-    return {type:'touhan_learning_state',schemaVersion:'1.3',generatedAt:o.createdAt||o.generatedAt||new Date().toISOString(),sourceAppVersion:o.appVersion||o.sourceAppVersion||'',priorityPolicy:'unseen > wrong_or_unknown > uncertain > seen',questionCount:questions.length,questions};
+    const answers=o?.data?.answers,wrongMeta=o?.data?.wrongMeta;if(!answers||typeof answers!=='object')throw new Error('学習状況JSONにquestionsまたはdata.answersがありません');
+    const map=new Map(),ensure=id=>{id=String(id||'').trim();if(!id)return null;if(!map.has(id))map.set(id,{knowledgeId:id,shownCount:0,answeredCount:0,correctCount:0,wrongCount:0,uncertainCount:0,unknownCount:0,lastResult:'',lastAnsweredAt:''});return map.get(id)};
+    for(const st of Object.values(answers)){if(!st||typeof st!=='object')continue;for(const r of (Array.isArray(st.questionResults)?st.questionResults:[])){const x=ensure(r?.knowledgeId);if(!x)continue;x.shownCount++;if(r.userAnswer)x.answeredCount++;if(r.userAnswer){if(r.isCorrect)x.correctCount++;else x.wrongCount++}if(r.wasUnsure)x.uncertainCount++;if(r.wasUnknown)x.unknownCount++;x.lastResult=r.isCorrect?(r.wasUnknown?'unknown':r.wasUnsure?'uncertain':'correct'):'wrong';const at=st.gradedAt||st.updated||'';if(at&&(!x.lastAnsweredAt||Date.parse(at)>Date.parse(x.lastAnsweredAt)))x.lastAnsweredAt=at}}
+    if(wrongMeta&&typeof wrongMeta==='object')for(const [key,m] of Object.entries(wrongMeta)){if(!m||typeof m!=='object')continue;let id=String(m.questionKey||key||'').trim();if(!/^tokyo_\d{4}_\d{3}(?:_[a-z])?$/.test(id)){const ex=String(m.sourceExamId||''),no=Number(m.sourceNo),ym=ex.match(/tokyo[_-]?(20\d{2})/i);if(ym&&Number.isFinite(no))id=`tokyo_${ym[1]}_${String(no).padStart(3,'0')}`;else continue}const x=ensure(id);if(!x)continue;x.shownCount=Math.max(x.shownCount,Number(m.attempts)||0);x.answeredCount=Math.max(x.answeredCount,Number(m.attempts)||0);x.correctCount=Math.max(x.correctCount,Number(m.correctCount)||0);x.wrongCount=Math.max(x.wrongCount,Number(m.wrongCount)||0);x.uncertainCount=Math.max(x.uncertainCount,Number(m.unsureCount)||0);x.unknownCount=Math.max(x.unknownCount,Number(m.unknownCount)||0);if(m.lastResult)x.lastResult=String(m.lastResult);if(m.lastAnsweredAt&&(!x.lastAnsweredAt||Date.parse(m.lastAnsweredAt)>Date.parse(x.lastAnsweredAt)))x.lastAnsweredAt=m.lastAnsweredAt}
+    const questions=[...map.values()];if(!questions.length)throw new Error('学習履歴からknowledgeIdを取得できません');return {type:'touhan_learning_state',schemaVersion:'1.3',generatedAt:o.createdAt||o.generatedAt||new Date().toISOString(),sourceAppVersion:o.appVersion||o.sourceAppVersion||'',priorityPolicy:'unseen > wrong_or_unknown > uncertain > seen',questionCount:questions.length,questions};
   }
-  async function importLearningFile(file){const o=normalizeLearningState(JSON.parse(await file.text()));localStorage.setItem(TouhanGenerator.LEARNING_KEY,JSON.stringify(o));renderLearningStatus();setStatus(`学習状況を読み込みました：${o.questions.length}問`,'ok')}
-  async function importTkdbFile(file){const o=JSON.parse(await file.text());const count=await applyTkdb(o,{name:file.name,version:o.tkdbVersion||'',at:new Date().toISOString()},true);report=null;setStatus(`TKDBを読み込みました：${Object.keys(o.records||{}).length}件／${count}記述`,'ok')}
+  async function applyLearning(obj,meta=null){const state=normalizeLearningState(obj);localStorage.setItem(TouhanGenerator.LEARNING_KEY,JSON.stringify(state));if(meta)patchMeta({learning:meta});updateCompactStatuses();return state}
+  async function importLearningFile(file){const state=await applyLearning(JSON.parse(await file.text()),{name:file.name,at:new Date().toISOString(),handleStored:false});setStatus(`学習状況を読み込みました：${state.questions.length}知識`,'ok')}
+  async function importTkdbFile(file){const o=JSON.parse(await file.text()),count=await applyTkdb(o,{name:file.name,version:o.tkdbVersion||'',at:new Date().toISOString(),handleStored:false},true);report=null;setStatus(`TKDBを読み込みました：${Object.keys(o.records||{}).length}知識／${count}記述`,'ok')}
+  async function chooseLearning(){if(!supportsFileHandles)return $('learningFile').click();const handle=await pickJsonHandle();const r=await readJsonHandle(handle,true);await idbPut(STORE_HANDLES,HANDLE_LEARNING,handle);const state=await applyLearning(r.json,{name:r.file.name,at:new Date().toISOString(),handleStored:true});setStatus(`学習状況を接続しました：${state.questions.length}知識`,'ok')}
+  async function chooseTkdb(){if(!supportsFileHandles)return $('tkdbFile').click();const handle=await pickJsonHandle();const r=await readJsonHandle(handle,true);await idbPut(STORE_HANDLES,HANDLE_TKDB,handle);const count=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);report=null;setStatus(`TKDBを接続しました：${Object.keys(r.json.records||{}).length}知識／${count}記述`,'ok')}
+  async function refreshLearning(request=true){const handle=await idbGet(STORE_HANDLES,HANDLE_LEARNING);if(!handle)throw new Error('再読込できる学習状況ファイルがありません');const r=await readJsonHandle(handle,request);const state=await applyLearning(r.json,{name:r.file.name,at:new Date().toISOString(),handleStored:true});setStatus(`学習状況を更新しました：${state.questions.length}知識`,'ok')}
+  async function refreshTkdb(request=true){const handle=await idbGet(STORE_HANDLES,HANDLE_TKDB);if(!handle)throw new Error('再読込できるTKDBファイルがありません');const r=await readJsonHandle(handle,request);const count=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);report=null;setStatus(`TKDBを更新しました：${count}記述`,'ok')}
 
+  window.TouhanTKDB={getKnowledge,getQuestionKnowledge,get version(){return tkdbDb?.tkdbVersion||''},get recordCount(){return Object.keys(tkdbDb?.records||{}).length}};
 
   document.addEventListener('DOMContentLoaded',()=>{
     $('genDate').value=today();syncMeta();$('genDate').addEventListener('change',syncMeta);$('genRound').addEventListener('input',syncMeta);$('genMode').addEventListener('change',syncMeta);$('genKind').addEventListener('change',syncMeta);
     $('loadDbBtn').onclick=()=>loadBundled().then(validate).catch(e=>setStatus(e.message,'err'));
     $('chooseMasterBtn').onclick=()=>$('masterFile').click();
-    $('chooseLearningBtn').onclick=()=>$('learningFile').click();
-    $('chooseTkdbBtn').onclick=()=>$('tkdbFile').click();
-    $('reloadDataBtn').onclick=()=>loadBundled().then(validate).catch(e=>setStatus(e.message,'err'));
-    $('resetDataBtn').onclick=async()=>{if(!confirm('TKDBを内蔵版へ戻し、学習状況を解除しますか？'))return;await clearSavedTkdb();localStorage.removeItem(TouhanGenerator.LEARNING_KEY);tkdbDb=null;rawDb=null;report=null;await loadBundled();await validate();setStatus('内蔵データへ戻しました','ok')};
+    $('chooseLearningBtn').onclick=()=>chooseLearning().catch(e=>setStatus(`学習状況読込失敗：${e.message}`,'err'));
+    $('chooseTkdbBtn').onclick=()=>chooseTkdb().catch(e=>setStatus(`TKDB読込失敗：${e.message}`,'err'));
+    $('refreshLearningBtn').onclick=()=>refreshLearning(true).catch(e=>setStatus(`学習状況更新失敗：${e.message}`,'err'));
+    $('refreshTkdbBtn').onclick=()=>refreshTkdb(true).catch(e=>setStatus(`TKDB更新失敗：${e.message}`,'err'));
+    $('reloadDataBtn').onclick=async()=>{try{rawDb=null;report=null;await loadBundled();await validate();setStatus('データを再読込しました','ok')}catch(e){setStatus(`再読込失敗：${e.message}`,'err')}};
+    $('resetDataBtn').onclick=async()=>{if(!confirm('外部TKDB・学習状況・ファイル接続を解除し、内蔵データへ戻しますか？'))return;await clearExternalData();localStorage.removeItem(TouhanGenerator.LEARNING_KEY);tkdbDb=null;rawDb=null;report=null;await loadBundled();await validate();setStatus('内蔵データへ戻しました','ok')};
     $('validateDbBtn').onclick=()=>validate().catch(e=>setStatus(e.message,'err'));
-    $('masterFile').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;rawDb=JSON.parse(await f.text());report=null;setStatus(`ローカルDB読込完了：${rawDb.questions?.length||0}問`,'ok')}catch(err){setStatus(`読込失敗：${err.message}`,'err')}};
+    $('masterFile').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;rawDb=JSON.parse(await f.text());report=null;updateCompactStatuses();setStatus(`ローカル問題DB読込完了：${rawDb.questions?.length||0}問`,'ok')}catch(err){setStatus(`問題DB読込失敗：${err.message}`,'err')}finally{e.target.value=''}};
     $('learningFile').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;await importLearningFile(f)}catch(err){setStatus(`学習状況読込失敗：${err.message}`,'err')}finally{e.target.value=''}};
     $('tkdbFile').onchange=async e=>{try{const f=e.target.files[0];if(!f)return;await importTkdbFile(f)}catch(err){setStatus(`TKDB読込失敗：${err.message}`,'err')}finally{e.target.value=''}};
-    renderLearningStatus();
-    $('generateDailyBtn').onclick=async()=>{try{if(!report)await validate();const mode=$('genMode').value;generated=TouhanGenerator.generate({questions:report.valid,date:$('genDate').value,dayId:$('genDayId').value.trim(),title:$('genTitle').value.trim(),mode,kind:$('genKind').value,sequence:Number($('genRound').value)||1});renderGenerated(generated);setStatus(`${mode==='one_by_one'?'一問一答':mode==='practice60'?'総合演習':'本番問題'}を生成しました。統合JSONを学習アプリへ取り込めます。`,'ok')}catch(e){setStatus(`生成失敗：${e.message}`,'err')}};
+    updateCompactStatuses();
+    $('generateDailyBtn').onclick=async()=>{try{if(!report)await validate();const mode=$('genMode').value;generated=TouhanGenerator.generate({questions:report.valid,date:$('genDate').value,dayId:$('genDayId').value.trim(),title:$('genTitle').value.trim(),mode,kind:$('genKind').value,sequence:Number($('genRound').value)||1});renderGenerated(generated);setStatus(`${mode==='one_by_one'?'一問一答':mode==='practice60'?'総合演習':'本番問題'}を生成しました。`,'ok')}catch(e){setStatus(`生成失敗：${e.message}`,'err')}};
     $('downloadDailyBtn').onclick=()=>generated?download(`${generated.id}_all_sets.json`,generated):setStatus('先に問題を生成してください','err');
     $('downloadSetsBtn').onclick=()=>{if(!generated)return setStatus('先に問題を生成してください','err');generated.sets.forEach(set=>download(`${set.id}.json`,{...generated,sets:[set]}))};
-    loadBundled().then(validate).catch(e=>setStatus(`自動読込できません。ローカルDBを選択してください：${e.message}`,'err'));
+    loadBundled().then(validate).catch(e=>setStatus(`自動読込できません：${e.message}`,'err'));
   });
 })();
