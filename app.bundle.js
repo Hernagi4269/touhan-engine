@@ -900,7 +900,7 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.1";result.engineVersion="2.1.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"exam_distribution > unseen > light_weakness_bonus",topicPolicy:"same exact topic once per set and once per 120; nearby semantic category at most twice per 120",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="2.1.2";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"exam_distribution > unseen > light_weakness_bonus",topicPolicy:"same exact topic once per set and once per 120; nearby semantic category at most twice per 120",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
   window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
@@ -922,11 +922,43 @@
 
   function getMeta(){try{return JSON.parse(localStorage.getItem(META_KEY)||'{}')}catch{return{}}}
   function patchMeta(patch){const next={...getMeta(),...patch};localStorage.setItem(META_KEY,JSON.stringify(next));return next}
-  function validTkdbObject(o){return !!(o&&typeof o==='object'&&o.records&&typeof o.records==='object'&&!Array.isArray(o.records))}
+  function normalizeTkdbObject(input){
+    const seen=new Set();
+    function unwrap(o,depth=0){
+      if(!o||typeof o!=='object'||Array.isArray(o)||depth>5||seen.has(o))return null;
+      seen.add(o);
+      if(o.records&&typeof o.records==='object'&&!Array.isArray(o.records))return o;
+      const candidates=[o.tkdb,o.runtimeTkdb,o.activeTkdb,o.payload,o.data?.tkdb,o.data?.runtimeTkdb,o.data];
+      for(const c of candidates){const found=unwrap(c,depth+1);if(found)return found}
+      return null;
+    }
+    const tkdb=unwrap(input);
+    if(!tkdb)return null;
+    if(!tkdb.questionMap||typeof tkdb.questionMap!=='object'||Array.isArray(tkdb.questionMap)){
+      const grouped={};
+      for(const [sourceId,r] of Object.entries(tkdb.records||{})){
+        const m=String(sourceId).match(/^(tokyo_\d{4}_\d{3})_([a-z])$/i);
+        if(!m)continue;
+        const qid=m[1],label=m[2].toLowerCase(),idx=label.charCodeAt(0)-97;
+        if(!grouped[qid])grouped[qid]={questionId:qid,knowledgeIds:[],chapter:r?.chapter||'',officialTopicId:r?.officialTopicId||r?.topicId||''};
+        grouped[qid].knowledgeIds[idx]=String(r?.tkdbKnowledgeId||r?.knowledgeId||sourceId);
+        if(!grouped[qid].chapter&&r?.chapter)grouped[qid].chapter=r.chapter;
+      }
+      for(const q of Object.values(grouped))q.knowledgeIds=q.knowledgeIds.filter(Boolean);
+      tkdb.questionMap=grouped;
+    }
+    return tkdb;
+  }
+  function validTkdbObject(o){const t=normalizeTkdbObject(o);return !!(t&&Object.keys(t.records||{}).length)}
   function getKnowledge(id){return tkdbDb?.records?.[String(id)]||null}
   function getQuestionKnowledge(questionId){const qm=tkdbDb?.questionMap?.[String(questionId)];if(!qm)return[];return (qm.knowledgeIds||[]).map((id,index)=>({id:String(id),label:String.fromCharCode(97+index),record:getKnowledge(id)}))}
-  function tkdbToExplanationRows(tkdb){
-    if(!validTkdbObject(tkdb))throw new Error('TKDB形式が不正です（recordsがありません）');
+  function tkdbToExplanationRows(input){
+    const tkdb=normalizeTkdbObject(input);
+    if(!tkdb||!Object.keys(tkdb.records||{}).length){
+      const keys=input&&typeof input==='object'&&!Array.isArray(input)?Object.keys(input).slice(0,12).join(', '):typeof input;
+      throw new Error(`TKDB形式が不正です（recordsを確認できません。検出キー: ${keys||'なし'}）`);
+    }
+    if(!Object.keys(tkdb.questionMap||{}).length)throw new Error('TKDBの問題対応表をrecordsから復元できません');
     tkdbDb=tkdb;
     const byCanonical=new Map();
     for(const [sourceId,r] of Object.entries(tkdb.records)){
@@ -976,7 +1008,7 @@
   }
   function formatTime(value){if(!value)return'';const d=new Date(value);if(!Number.isFinite(d.getTime()))return'';return new Intl.DateTimeFormat('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(d)}
 
-  async function applyTkdb(obj,meta=null,persist=false){const rows=tkdbToExplanationRows(obj);TouhanGenerator.setExplanationData(rows);if(persist)await idbPut(STORE_CONTENT,TKDB_CONTENT_KEY,obj);if(meta)patchMeta({tkdb:meta});updateCompactStatuses();return rows.reduce((n,q)=>n+(q.statements?.length||0),0)}
+  async function applyTkdb(obj,meta=null,persist=false){const normalized=normalizeTkdbObject(obj);const rows=tkdbToExplanationRows(normalized||obj);TouhanGenerator.setExplanationData(rows);if(persist)await idbPut(STORE_CONTENT,TKDB_CONTENT_KEY,tkdbDb);if(meta)patchMeta({tkdb:{...meta,version:tkdbDb?.tkdbVersion||meta?.version||''}});updateCompactStatuses();return rows.reduce((n,q)=>n+(q.statements?.length||0),0)}
   async function loadBundled(){
     setStatus('問題DB・TKDBを読み込んでいます…');
     const masterRes=await fetch('./data/tokyo_master.json',{cache:'no-store'});if(!masterRes.ok)throw new Error(`問題DB読込失敗: ${masterRes.status}`);rawDb=await masterRes.json();
@@ -1006,9 +1038,9 @@
   }
   async function applyLearning(obj,meta=null){const state=normalizeLearningState(obj);localStorage.setItem(TouhanGenerator.LEARNING_KEY,JSON.stringify(state));if(meta)patchMeta({learning:meta});updateCompactStatuses();return state}
   async function importLearningFile(file){const state=await applyLearning(JSON.parse(await file.text()),{name:file.name,at:new Date().toISOString(),handleStored:false});setStatus(`学習状況を読み込みました：${state.questions.length}知識`,'ok')}
-  async function importTkdbFile(file){const o=JSON.parse(await file.text()),count=await applyTkdb(o,{name:file.name,version:o.tkdbVersion||'',at:new Date().toISOString(),handleStored:false},true);report=null;setStatus(`TKDBを読み込みました：${Object.keys(o.records||{}).length}知識／${count}記述`,'ok')}
+  async function importTkdbFile(file){const o=JSON.parse(await file.text()),count=await applyTkdb(o,{name:file.name,version:o.tkdbVersion||'',at:new Date().toISOString(),handleStored:false},true);report=null;setStatus(`TKDBを読み込みました：${Object.keys(tkdbDb?.records||{}).length}知識／${count}記述`,'ok')}
   async function chooseLearning(){if(!supportsFileHandles)return $('learningFile').click();const handle=await pickJsonHandle();const r=await readJsonHandle(handle,true);await idbPut(STORE_HANDLES,HANDLE_LEARNING,handle);const state=await applyLearning(r.json,{name:r.file.name,at:new Date().toISOString(),handleStored:true});setStatus(`学習状況を接続しました：${state.questions.length}知識`,'ok')}
-  async function chooseTkdb(){if(!supportsFileHandles)return $('tkdbFile').click();const handle=await pickJsonHandle();const r=await readJsonHandle(handle,true);await idbPut(STORE_HANDLES,HANDLE_TKDB,handle);const count=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);report=null;setStatus(`TKDBを接続しました：${Object.keys(r.json.records||{}).length}知識／${count}記述`,'ok')}
+  async function chooseTkdb(){if(!supportsFileHandles)return $('tkdbFile').click();const handle=await pickJsonHandle();const r=await readJsonHandle(handle,true);await idbPut(STORE_HANDLES,HANDLE_TKDB,handle);const count=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);report=null;setStatus(`TKDBを接続しました：${Object.keys(tkdbDb?.records||{}).length}知識／${count}記述`,'ok')}
   async function refreshLearning(request=true){const handle=await idbGet(STORE_HANDLES,HANDLE_LEARNING);if(!handle)throw new Error('再読込できる学習状況ファイルがありません');const r=await readJsonHandle(handle,request);const state=await applyLearning(r.json,{name:r.file.name,at:new Date().toISOString(),handleStored:true});setStatus(`学習状況を更新しました：${state.questions.length}知識`,'ok')}
   async function refreshTkdb(request=true){const handle=await idbGet(STORE_HANDLES,HANDLE_TKDB);if(!handle)throw new Error('再読込できるTKDBファイルがありません');const r=await readJsonHandle(handle,request);const count=await applyTkdb(r.json,{name:r.file.name,version:r.json.tkdbVersion||'',at:new Date().toISOString(),handleStored:true},true);report=null;setStatus(`TKDBを更新しました：${count}記述`,'ok')}
 
