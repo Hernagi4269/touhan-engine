@@ -1,7 +1,7 @@
 {
   "schema_version": "2.1",
-  "manager_version": "1.2.4",
-  "generated_at": "2026-07-18T17:53:59.495118+00:00",
+  "manager_version": "2.3.0",
+  "generated_at": "2026-07-29T18:29:12.450526+00:00",
   "source_files": [
     {
       "file": "F:\\過去問PDF抽出\\過去問\\東京\\2025\\2025\\tokyo_2025_v4.json",
@@ -123,7 +123,7 @@
         "誤 正 誤 誤",
         "正 誤 誤 正"
       ],
-      "answer": "2",
+      "answer": "4",
       "source_type": "official",
       "source_file": {
         "question": "F:\\Touhan\\official\\tokyo\\2021\\question_am.pdf",
@@ -139,7 +139,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_answer_verified": true,
+        "official_answer_corrected_in": "2.3.0"
       },
       "_import_file": "tokyo_2021_v4.json",
       "manual_correction": {
@@ -232,7 +234,7 @@
         "誤 正 正 誤",
         "正 誤 誤 誤"
       ],
-      "answer": "4",
+      "answer": "1",
       "source_type": "official",
       "source_file": {
         "question": "F:\\Touhan\\official\\tokyo\\2021\\question_am.pdf",
@@ -248,7 +250,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_answer_verified": true,
+        "official_answer_corrected_in": "2.3.0"
       },
       "_import_file": "tokyo_2021_v4.json"
     },
@@ -5156,7 +5160,7 @@
         "誤 正 誤",
         "正 誤 誤",
         "誤 正 正",
-        "正 誤 正医薬品の適正使用と安全対策"
+        "正 誤 正"
       ],
       "answer": "4",
       "source_type": "official",
@@ -5174,7 +5178,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_text_corrected_in": "2.3.0",
+        "official_text_verified": true
       },
       "_import_file": "tokyo_2021_v4.json"
     },
@@ -6424,7 +6430,7 @@
         "誤 正 正 正",
         "誤 正 誤 正"
       ],
-      "answer": "2",
+      "answer": "1",
       "source_type": "official",
       "source_file": {
         "question": "F:\\Touhan\\official\\tokyo\\2022\\question_am.pdf",
@@ -6437,7 +6443,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_answer_verified": true,
+        "official_answer_corrected_in": "2.3.0"
       },
       "_import_file": "tokyo_2022_v4.json"
     },
@@ -11226,7 +11234,7 @@
         "正 正 誤 正",
         "誤 正 誤 誤",
         "誤 誤 正 正",
-        "誤 誤 誤 誤医薬品の適正使用と安全対策"
+        "誤 誤 誤 誤"
       ],
       "answer": "5",
       "source_type": "official",
@@ -11243,7 +11251,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_text_corrected_in": "2.3.0",
+        "official_text_verified": true
       },
       "_import_file": "tokyo_2022_v4.json"
     },
@@ -12440,7 +12450,7 @@
         "正 誤 正 正",
         "誤 正 正 誤"
       ],
-      "answer": "2",
+      "answer": "4",
       "source_type": "official",
       "source_file": {
         "question": "F:\\Touhan\\official\\tokyo\\2023\\question_am.pdf",
@@ -12456,7 +12466,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_answer_verified": true,
+        "official_answer_corrected_in": "2.3.0"
       },
       "_import_file": "tokyo_2023_v4.json"
     },
@@ -18466,7 +18478,7 @@
         "誤 正 誤 誤",
         "正 誤 正 誤"
       ],
-      "answer": "5",
+      "answer": "1",
       "source_type": "official",
       "source_file": {
         "question": "F:\\Touhan\\official\\tokyo\\2024\\question_am.pdf",
@@ -18483,7 +18495,9 @@
         "reasons": [],
         "choice_mode": "unparsed",
         "repaired": true,
-        "repair_source": "verified_existing_tokyo_database"
+        "repair_source": "verified_existing_tokyo_database",
+        "official_answer_verified": true,
+        "official_answer_corrected_in": "2.3.0"
       },
       "_import_file": "tokyo_2024_v4.json"
     },
@@ -23462,7 +23476,7 @@
         "正 誤 誤 正",
         "正 正 誤 正",
         "誤 正 誤 誤",
-        "誤 誤 正 正医薬品の適正使用と安全対策"
+        "誤 誤 正 正"
       ],
       "answer": "3",
       "source_type": "official",
@@ -23480,7 +23494,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_text_corrected_in": "2.3.0",
+        "official_text_verified": true
       },
       "_import_file": "tokyo_2024_v4.json"
     },
@@ -29535,7 +29551,7 @@
         "正 誤 誤 正",
         "正 誤 正 誤",
         "誤 正 誤 誤",
-        "誤 正 正 正医薬品の適正使用と安全対策"
+        "誤 正 正 正"
       ],
       "answer": "5",
       "source_type": "official",
@@ -29553,7 +29569,9 @@
         "score": 100,
         "status": "ok",
         "reasons": [],
-        "choice_mode": "table_rows"
+        "choice_mode": "table_rows",
+        "official_text_corrected_in": "2.3.0",
+        "official_text_verified": true
       },
       "_import_file": "tokyo_2025_v4.json"
     },
@@ -30593,6 +30611,64 @@
         "tokyo_2024_090_choice_2 context supplementation"
       ],
       "note": "一問一答生成時に主語を補完。短い解説の無内容な誤りテンプレートを廃止。"
+    },
+    {
+      "version": "2.3.0",
+      "count": 9,
+      "source": "official Tokyo answer-key PDFs",
+      "changes": [
+        {
+          "question_id": "tokyo_2021_002",
+          "old_answer": "2",
+          "new_answer": "4"
+        },
+        {
+          "question_id": "tokyo_2021_004",
+          "old_answer": "4",
+          "new_answer": "1"
+        },
+        {
+          "question_id": "tokyo_2022_005",
+          "old_answer": "2",
+          "new_answer": "1"
+        },
+        {
+          "question_id": "tokyo_2023_004",
+          "old_answer": "2",
+          "new_answer": "4"
+        },
+        {
+          "question_id": "tokyo_2024_001",
+          "old_answer": "5",
+          "new_answer": "1"
+        }
+      ],
+      "text_changes": [
+        {
+          "question_id": "tokyo_2025_100",
+          "field": "choices[4]",
+          "old": "誤 正 正 正医薬品の適正使用と安全対策",
+          "new": "誤 正 正 正"
+        },
+        {
+          "question_id": "tokyo_2021_100",
+          "field": "choices[4]",
+          "old": "正 誤 正医薬品の適正使用と安全対策",
+          "new": "正 誤 正"
+        },
+        {
+          "question_id": "tokyo_2022_100",
+          "field": "choices[4]",
+          "old": "誤 誤 誤 誤医薬品の適正使用と安全対策",
+          "new": "誤 誤 誤 誤"
+        },
+        {
+          "question_id": "tokyo_2024_100",
+          "field": "choices[4]",
+          "old": "誤 誤 正 正医薬品の適正使用と安全対策",
+          "new": "誤 誤 正 正"
+        }
+      ]
     }
   ]
 }

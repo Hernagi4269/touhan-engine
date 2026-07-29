@@ -1,0 +1,91 @@
+{
+  "auditDate": "2026-07-30",
+  "scope": "東京都2021〜2025年度 公式過去問600問",
+  "structuralChecks": {
+    "questionCount": 600,
+    "years": {
+      "2021": 120,
+      "2022": 120,
+      "2023": 120,
+      "2024": 120,
+      "2025": 120
+    },
+    "missingRequiredFields": 0,
+    "invalidAnswers": 0,
+    "duplicateQuestionIds": 0
+  },
+  "officialAnswerKeyComparison": {
+    "compared": 600,
+    "mismatchesFound": 5,
+    "corrected": 5,
+    "corrections": [
+      {
+        "question_id": "tokyo_2021_002",
+        "old": "2",
+        "official": "4"
+      },
+      {
+        "question_id": "tokyo_2021_004",
+        "old": "4",
+        "official": "1"
+      },
+      {
+        "question_id": "tokyo_2022_005",
+        "old": "2",
+        "official": "1"
+      },
+      {
+        "question_id": "tokyo_2023_004",
+        "old": "2",
+        "official": "4"
+      },
+      {
+        "question_id": "tokyo_2024_001",
+        "old": "5",
+        "official": "1"
+      }
+    ]
+  },
+  "textAudit": {
+    "method": "official question PDF extracted text vs normalized stored question/statement text",
+    "note": "表記揺れ・PDF抽出順の影響で機械的完全一致しない箇所はあるため、自動修正していない。文字化け、本文欠落、選択肢数不足は検出なし。",
+    "confirmedCorrections": [
+      {
+        "question_id": "tokyo_2021_100",
+        "field": "choice5",
+        "issue": "章見出し混入"
+      },
+      {
+        "question_id": "tokyo_2022_100",
+        "field": "choice5",
+        "issue": "章見出し混入"
+      },
+      {
+        "question_id": "tokyo_2024_100",
+        "field": "choice5",
+        "issue": "章見出し混入"
+      },
+      {
+        "question_id": "tokyo_2025_100",
+        "field": "choice5",
+        "issue": "章見出し混入"
+      }
+    ],
+    "confirmedCorrectionCount": 4
+  },
+  "pastExamMode": {
+    "years": [
+      "2021",
+      "2022",
+      "2023",
+      "2024",
+      "2025"
+    ],
+    "order": "official question_no order",
+    "sets": [
+      "午前60問",
+      "午後60問"
+    ],
+    "randomization": false
+  }
+}
