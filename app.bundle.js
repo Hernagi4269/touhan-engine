@@ -778,7 +778,8 @@
     return false;
   }
   function isStructuralDuplicateOneByOne(candidate,selectedQuestions){
-    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
+    // 候補不足時の最終防衛線。題材・成分カテゴリの上限はここでは緩和し、
+    // 同一元問題と文章上ほぼ同一の記述だけを除外する。
     const c=cleanText(candidate.statement);
     for(const prev of selectedQuestions){
       if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
@@ -900,7 +901,7 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.1";result.engineVersion="2.1.2";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"exam_distribution > unseen > light_weakness_bonus",topicPolicy:"same exact topic once per set and once per 120; nearby semantic category at most twice per 120",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.1";result.engineVersion="2.1.3";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy={priority:"exam_distribution > unseen > light_weakness_bonus",topicPolicy:"same exact topic once per set and once per 120; nearby semantic category at most twice per 120",unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:"same topic once per set"};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
   window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
