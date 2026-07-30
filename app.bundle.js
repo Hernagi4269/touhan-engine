@@ -131,7 +131,7 @@
       if(!candidates.length)break;
       candidates.sort((a,b)=>{
         const ar=diversityRank(a.q,state),br=diversityRank(b.q,state);
-        for(let i=0;i<3;i++)if(ar[i]!==br[i])return ar[i]-br[i];
+        for(let i=0;i<Math.max(ar.length,br.length);i++)if((ar[i]||0)!==(br[i]||0))return (ar[i]||0)-(br[i]||0);
         return b.base-a.base;
       });
       const chosen=candidates.find(({q})=>!duplicateGuard||!duplicateGuard(q,selectedQuestions));
@@ -749,10 +749,12 @@
   }
   function diversityRank(q,state){
     const p=topicProfile(q);
-    const official=p.officialTopicId?(state.official.get(p.officialTopicId)||0):999;
-    const group=p.themeGroupIds.length?Math.min(...p.themeGroupIds.map(x=>state.group.get(x)||0)):999;
-    const topic=p.topicIds.length?Math.min(...p.topicIds.map(x=>state.topic.get(x)||0)):999;
-    return [official,group,topic];
+    const official=p.officialTopicId?(state.official.get(p.officialTopicId)||0):0;
+    // 複数タグを持つ問題が「未使用タグを1個含む」だけで優遇されないよう、最大使用回数で評価する。
+    const group=p.themeGroupIds.length?Math.max(...p.themeGroupIds.map(x=>state.group.get(x)||0)):0;
+    const topic=p.topicIds.length?Math.max(...p.topicIds.map(x=>state.topic.get(x)||0)):0;
+    const total=official*100+group*30+topic*10;
+    return [total,official,group,topic];
   }
   function addDiversityProfile(q,state){
     const p=topicProfile(q);
@@ -819,47 +821,74 @@
     let common=0;for(const v of A)if(B.has(v))common++;
     return (2*common)/(A.size+B.size);
   }
-  function isNearDuplicateOneByOne(candidate,selectedQuestions){
-    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
-    const c=cleanText(candidate.statement);
+  const KNOWLEDGE_FINGERPRINTS=[
+    ['再審査制度',['既存の医薬品と明らかに異なる有効成分','5年を超えない範囲','再審査制度']],
+    ['添付文書法定表示',['添付文書','容器','被包','記載']],
+    ['副作用報告制度',['副作用','報告','厚生労働大臣']],
+    ['救済制度給付',['副作用被害救済制度','給付']],
+    ['安全性情報',['緊急安全性情報','安全性速報']],
+    ['濫用防止確認',['濫用等のおそれ','氏名','年齢','購入']],
+    ['販売区分陳列',['要指導医薬品','第一類医薬品','陳列']],
+    ['登録販売者従事登録',['登録販売者','販売従事登録']],
+    ['広告規制',['誇大広告','虚偽広告']],
+    ['一般用検査薬',['一般用検査薬','検体']]
+  ];
+  function knowledgeFingerprints(q){
+    const text=`${q.source_context||''} ${q.statement||q.question_text||''}`.normalize('NFKC');
+    const out=[];
+    for(const [id,terms] of KNOWLEDGE_FINGERPRINTS){
+      const hits=terms.filter(t=>text.includes(t)).length;
+      const required=terms.length>=4?3:terms.length;
+      if(hits>=required)out.push(id);
+    }
+    // 制度名・成分名・漢方名は、表現が多少違っても同じ知識として扱う。
+    for(const k of topicKeys(q))if(/^(?:ingredient|kampo|term):/.test(k))out.push(k);
+    return [...new Set(out)];
+  }
+  function coreClauseText(value){
+    return normalizeSimilarityText(value)
+      .replace(/^(?:一般用医薬品|医薬品|登録販売者|製造販売業者等?|医薬関係者)(?:に関して|について|には|は)?/,'')
+      .replace(/(?:に関する次の記述|次の記述|について)$/g,'');
+  }
+  function hardKnowledgeDuplicate(candidate,selectedQuestions){
+    const c=cleanText(candidate.statement||candidate.question_text||'');
+    const cf=new Set(knowledgeFingerprints(candidate));
     for(const prev of selectedQuestions){
       if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
-      const p=cleanText(prev.statement);
-      const sim=diceSimilarity(c,p,3);
-      if(sim>=0.62)return true;
-      const c2=normalizeSimilarityText(c),p2=normalizeSimilarityText(p);
-      if(Math.min(c2.length,p2.length)>=24){
-        const shorter=c2.length<=p2.length?c2:p2,longer=c2.length<=p2.length?p2:c2;
-        if(longer.includes(shorter)&&shorter.length/longer.length>=0.68)return true;
-      }
+      if(candidate.question_id&&prev.question_id===candidate.question_id)return true;
+      const p=cleanText(prev.statement||prev.question_text||'');
+      if(diceSimilarity(c,p,3)>=0.56)return true;
+      const cc=coreClauseText(c),pc=coreClauseText(p);
+      if(Math.min(cc.length,pc.length)>=30&&diceSimilarity(cc,pc,2)>=0.70)return true;
+      const pf=knowledgeFingerprints(prev);
+      if(pf.some(x=>cf.has(x)))return true;
     }
+    return false;
+  }
+  function isNearDuplicateOneByOne(candidate,selectedQuestions){
+    if(hardKnowledgeDuplicate(candidate,selectedQuestions))return true;
+    if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
     return false;
   }
   function isStructuralDuplicateOneByOne(candidate,selectedQuestions){
-    // 候補不足時の最終防衛線。題材・成分カテゴリの上限はここでは緩和し、
-    // 同一元問題と文章上ほぼ同一の記述だけを除外する。
-    const c=cleanText(candidate.statement);
-    for(const prev of selectedQuestions){
-      if(candidate.source_question_id&&prev.source_question_id===candidate.source_question_id)return true;
-      const p=cleanText(prev.statement);
-      const sim=diceSimilarity(c,p,3);
-      if(sim>=0.62)return true;
-      const c2=normalizeSimilarityText(c),p2=normalizeSimilarityText(p);
-      if(Math.min(c2.length,p2.length)>=24){
-        const shorter=c2.length<=p2.length?c2:p2,longer=c2.length<=p2.length?p2:c2;
-        if(longer.includes(shorter)&&shorter.length/longer.length>=0.68)return true;
-      }
-    }
-    return false;
+    // 候補不足時も、同一元問題・ほぼ同文・同一知識指紋は絶対に通さない。
+    return hardKnowledgeDuplicate(candidate,selectedQuestions);
   }
-
   function isNearDuplicateExam(candidate,selectedQuestions){
     if(exceedsGlobalTopicLimit(candidate,selectedQuestions))return true;
     const c=questionSemanticText(candidate);
     for(const prev of selectedQuestions){
       if(candidate.question_id===prev.question_id)return true;
-      const sim=diceSimilarity(c,questionSemanticText(prev),3);
-      if(sim>=0.68)return true;
+      if(diceSimilarity(c,questionSemanticText(prev),3)>=0.66)return true;
+    }
+    return false;
+  }
+  function isStructuralDuplicateExam(candidate,selectedQuestions){
+    // 60/120問では題材制限を段階的に緩和するが、同一問題とほぼ同文の問題は通さない。
+    const c=questionSemanticText(candidate);
+    for(const prev of selectedQuestions){
+      if(candidate.question_id===prev.question_id)return true;
+      if(diceSimilarity(c,questionSemanticText(prev),3)>=0.78)return true;
     }
     return false;
   }
@@ -904,7 +933,9 @@
           if(!allowRecent&&blocked.has(q.question_id)&&!isReview)continue;
           const hardDuplicate=duplicateGuard===isNearDuplicateOneByOne
             ?isStructuralDuplicateOneByOne(q,selectedQuestions)
-            :(duplicateGuard&&duplicateGuard(q,selectedQuestions));
+            :duplicateGuard===isNearDuplicateExam
+              ?isStructuralDuplicateExam(q,selectedQuestions)
+              :(duplicateGuard&&duplicateGuard(q,selectedQuestions));
           if(hardDuplicate)continue;
           chapterPicked.push(q);picked.push(q);selected.add(q.question_id);selectedQuestions.push(q);addTopicKeys(q,topicSet);addDiversityProfile(q,diversityState);
         }
@@ -936,6 +967,7 @@
         for(const [chapter,expected] of Object.entries(DISTRIBUTIONS.one_by_one))if((count[chapter]||0)!==expected)issues.push(`${set.id}:${chapter}=${count[chapter]||0}（期待${expected}）`);
         const topicCount={};for(const q of set.questions)for(const k of (q.topic_keys||[]))topicCount[k]=(topicCount[k]||0)+1;
         for(const [k,n] of Object.entries(topicCount))if(n>1)warnings.push(`${set.id}:題材分散を緩和:${k}=${n}`);
+        for(let i=0;i<set.questions.length;i++)for(let j=0;j<i;j++)if(hardKnowledgeDuplicate(set.questions[i],set.questions.slice(j,j+1)))issues.push(`${set.id}:同一知識重複:${set.questions[j].knowledge_id}/${set.questions[i].knowledge_id}`);
       }
     }
     return {ok:issues.length===0,issueCount:issues.length,warningCount:warnings.length,issues,warnings};
@@ -971,10 +1003,10 @@
       const back=makeSet({pool:examPool,distribution:DISTRIBUTIONS.exam_pm,count:60,id:`${dayId}-back`,title:'後半 60問',note:'第3章40・第5章20',random,blocked,selected,mapper:toExamQuestion,selectedQuestions,duplicateGuard:isNearDuplicateExam});
       result={id:dayId,title:actualTitle,date:date.replace(/-/g,'/'),category:'exam_style',category_label:'本番形式120問',mode:'exam_style',kind,sets:[front,back]};
     }
-    result.schemaVersion="2.3";result.engineVersion="2.3.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy=mode==='past_exam'?{priority:'official_original_order',topicPolicy:'no generation or reordering; exact stored official exam sequence',originalOrder:true}:{priority:'chapter_distribution > official_handbook_topic > theme_group > topic_id > unseen > light_weakness_bonus',topicPolicy:'greedy dispersion across official handbook topics, semantic theme groups, and exact topic IDs; shortage fallback preserves source and near-text duplicate guards',unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:'balanced by three-layer topic counts; relaxed only when required to complete the requested exam'};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
+    result.schemaVersion="2.4";result.engineVersion="2.4.0";result.embeddedAnswerData=true;result.generation_kind=kind;result.generation_kind_label=KIND_LABELS[kind]||kind;result.generation_sequence=Math.max(1,Number(sequence)||1);result.generated_at=new Date().toISOString();result.correctionRegistryVersion=KNOWN_CORRECTION_REGISTRY_VERSION;const lm=learningMap(),gc=generatedCounts(),allIds=result.sets.flatMap(s=>s.questions.map(q=>String(q.knowledge_id||"")));result.selectionPolicy=mode==='past_exam'?{priority:'official_original_order',topicPolicy:'no generation or reordering; exact stored official exam sequence',originalOrder:true}:{priority:'chapter_distribution > official_handbook_topic > theme_group > topic_id > unseen > light_weakness_bonus',topicPolicy:'greedy dispersion across official handbook topics, semantic theme groups, and exact topic IDs; shortage fallback preserves source and near-text duplicate guards',unseenSelected:allIds.filter(id=>Math.max(Number(lm.get(id)?.shownCount)||0,gc.get(id)||0)===0).length,reviewSelected:allIds.filter(id=>(lm.get(id)?.wrongCount||0)>0||(lm.get(id)?.unknownCount||0)>0||(lm.get(id)?.uncertainCount||0)>0).length,topicDuplicateLimit:'balanced by three-layer topic counts; relaxed only when required to complete the requested exam'};result.generationAudit=auditGeneratedResult(result,mode);if(!result.generationAudit.ok)throw new Error(`生成後品質検査に失敗しました: ${result.generationAudit.issues.slice(0,5).join(" / ")}`);saveHistory(result,mode,kind);return result;
   }
 
-  window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,topicProfile,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
+  window.TouhanGenerator={setExplanationData,generate,buildOneByOnePool,DISTRIBUTIONS,topicProfile,knowledgeFingerprints,hardKnowledgeDuplicate,HISTORY_KEY,LEARNING_KEY,KIND_LABELS,generatedTitle,cleanText,stripSourceQuestionNumber,formatExamQuestionText,formatExamChoiceText,extractLetterStatements,isUsableExamQuestion,isNaturalStatement,naturalStatementReasons,isScenarioSourceQuestion,isMultiColumnTableSource,sourceTopic,contextualizeStatement,diceSimilarity,isNearDuplicateOneByOne,isNearDuplicateExam,sourceStatements,questionSemanticText,normalizeCorrespondenceStatement,topicKeys,auditGeneratedResult};
 })();
 (function(){
   window.__TOUHAN_ENGINE_SCRIPT_LOADED__=true;
